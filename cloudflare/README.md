@@ -1,6 +1,6 @@
 # نبض على Cloudflare — الخطة المجانية
 
-هذه نسخة مستقلة من لوحة الحملات تستضيف الواجهة وAPI على Worker واحد، وتحفظ البيانات في D1. لا تحتاج VPS أو دومين؛ يستخدم النشر عنوانًا من نوع `https://nabdh-cms.YOUR-SUBDOMAIN.workers.dev`. Firebase FCM هو مزوّد الإشعارات. GitHub Pages يبقى لمعاينة تطبيق Android فقط.
+هذه نسخة مستقلة من لوحة الحملات تستضيف الواجهة وAPI على Worker واحد اسمه `testcodex`، وتحفظ البيانات في D1 باسم `nabdh-cms`. لا تحتاج VPS أو دومين؛ يستخدم النشر عنوانًا من نوع `https://testcodex.YOUR-SUBDOMAIN.workers.dev`. Firebase FCM هو مزوّد الإشعارات. GitHub Pages يبقى لمعاينة تطبيق Android فقط.
 
 ## حالة العمل
 
