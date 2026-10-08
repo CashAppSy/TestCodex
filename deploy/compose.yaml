@@ -1,0 +1,60 @@
+name: nabdh
+
+x-runtime: &runtime
+  image: nabdh-cms:local
+  restart: unless-stopped
+  environment:
+    CMS_DB_PATH: /app/.data/cms.sqlite
+    CMS_SECURE_COOKIES: "true"
+    PUSH_PROVIDER: fcm
+    GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase_account
+    CMS_DEVICE_API_KEY: ${CMS_DEVICE_API_KEY:?Set a server API key in deploy/.env}
+  secrets:
+    - firebase_account
+  volumes:
+    - cms_data:/app/.data
+
+services:
+  web:
+    <<: *runtime
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:3000:3000"
+  worker:
+    <<: *runtime
+    profiles: [public]
+    command: [node, --experimental-strip-types, scripts/worker.ts]
+    healthcheck:
+      disable: true
+    stop_grace_period: 45s
+    depends_on:
+      web:
+        condition: service_healthy
+  https:
+    image: caddy:2-alpine
+    profiles: [public]
+    restart: unless-stopped
+    environment:
+      CMS_DOMAIN: ${CMS_DOMAIN:?Set your dashboard hostname in deploy/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set your certificate contact email in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
+secrets:
+  firebase_account:
+    file: ${FIREBASE_ACCOUNT_FILE:?Set an absolute path to the server service-account JSON}
+
+volumes:
+  cms_data:
+  caddy_data:
+  caddy_config:

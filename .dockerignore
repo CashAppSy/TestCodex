@@ -1,0 +1,15 @@
+node_modules
+.next
+.data
+.git
+.env*
+mobile
+test-results
+playwright-report
+tests
+deploy
+*.tsbuildinfo
+**/*firebase-admin*.json
+**/google-services.json
+**/*.pem
+**/*.key

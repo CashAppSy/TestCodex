@@ -1,0 +1,43 @@
+{
+  "name": "nabdh-test-app",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "web": "expo start --web --port 8081",
+    "export:web": "expo export --platform web --max-workers 2",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "check:firebase": "node scripts/check-firebase.mjs",
+    "android": "npm run check:firebase && expo run:android",
+    "prebuild:android": "npm run check:firebase && expo prebuild --platform android",
+    "build:apk": "npm run prebuild:android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~57.0.16",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-firebase/app": "26.4.0",
+    "@react-native-firebase/messaging": "26.4.0",
+    "expo": "~57.0.27",
+    "expo-build-properties": "~57.0.22",
+    "expo-constants": "~57.0.21",
+    "expo-dev-client": "~57.0.19",
+    "expo-notifications": "~57.0.22",
+    "expo-secure-store": "~57.0.4",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-web": "^0.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
