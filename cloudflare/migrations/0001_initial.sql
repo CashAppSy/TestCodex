@@ -1,0 +1,11 @@
+CREATE TABLE admins (id INTEGER PRIMARY KEY CHECK(id=1), name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL);
+CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, admin_id INTEGER NOT NULL REFERENCES admins(id), expires_at INTEGER NOT NULL);
+CREATE INDEX sessions_expiry ON sessions(expires_at);
+CREATE TABLE rate_limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+CREATE TABLE devices (id INTEGER PRIMARY KEY, token TEXT NOT NULL UNIQUE, platform TEXT NOT NULL CHECK(platform IN ('android','ios')), segment TEXT NOT NULL DEFAULT 'test', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+CREATE TABLE mobile_pairing_codes (code_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, claimed_by TEXT);
+CREATE TABLE mobile_sessions (credential_hash TEXT PRIMARY KEY, device_id INTEGER NOT NULL REFERENCES devices(id), expires_at INTEGER NOT NULL);
+CREATE TABLE campaigns (id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, platform TEXT NOT NULL DEFAULT 'android', segment TEXT NOT NULL DEFAULT 'test', link TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft', scheduled_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT, error TEXT, accepted INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0, claim_token TEXT);
+CREATE INDEX campaigns_due ON campaigns(status, scheduled_at);
+CREATE TABLE deliveries (campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE, device_id INTEGER NOT NULL REFERENCES devices(id), status TEXT NOT NULL DEFAULT 'pending', error TEXT, provider_id TEXT, claimed_at INTEGER, PRIMARY KEY(campaign_id,device_id));
+CREATE INDEX deliveries_work ON deliveries(campaign_id,status);

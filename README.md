@@ -26,6 +26,8 @@ npm run start
 
 ## معاينة الواجهة على GitHub Pages
 
+لنشر لوحة فعلية بخدمات مجانية، استخدم [نسخة Cloudflare Workers وD1](cloudflare/README.md). تستضيف الواجهة وAPI والحملات المجدولة على Worker واحد. تحتاج Database ID الحقيقي وأسرار Firebase في إعدادات Worker؛ معاينة GitHub Pages منفصلة عن هذه اللوحة.
+
 يمكن نشر واجهة تطبيق الاختبار مجانًا عبر workflow في `.github/workflows/pages.yml`. راجع [خطوات تفعيل GitHub Pages](mobile/GITHUB_PAGES.md). المعاينة تدعم المحاكاة المحلية فقط؛ لوحة الحملات وقاعدة بياناتها وإرسال FCM تحتاج خادمًا منفصلًا.
 
 ## Firebase Cloud Messaging — الخيار الافتراضي

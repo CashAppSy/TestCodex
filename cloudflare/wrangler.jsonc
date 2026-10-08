@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nabdh-cms",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-08",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./web",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nabdh-cms",
+      // User-provided database identifier. Keep the binding named DB.
+      "database_id": "da3f2841-b8a5-4d5e-b662-01487cdbd1a7",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "triggers": { "crons": ["* * * * *"] },
+}

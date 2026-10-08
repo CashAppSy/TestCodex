@@ -14,3 +14,7 @@ mobile/google-services.json
 mobile/GoogleService-Info.plist
 mobile/*.keystore
 mobile/*.jks
+cloudflare/.wrangler/
+cloudflare/dist/
+cloudflare/.dev.vars*
+**/*firebase-admin*.json

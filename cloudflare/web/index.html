@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#365e42" />
+    <title>نبض · إدارة حملات الإشعارات</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">◉ نبض <small>حملات تصنع التواصل</small></a>
+      <div id="account" hidden>
+        <span id="user-name"></span
+        ><button id="logout" class="quiet">تسجيل الخروج</button>
+      </div>
+    </header>
+    <p id="notice" role="status" hidden></p>
+    <main>
+      <section id="auth" class="auth" hidden>
+        <div class="intro">
+          <span class="eyebrow">رسالتك، في اللحظة المناسبة</span>
+          <h1>ابدأ تواصلًا<br />يستحق الانتباه.</h1>
+          <p>
+            جهّز حملاتك، اربط أجهزة الاختبار، وتابع طلبات إرسال إشعارات Firebase
+            من مكان واحد.
+          </p>
+          <span class="pill">Cloudflare + D1</span>
+        </div>
+        <form id="auth-form" class="panel">
+          <h2 id="auth-title">تسجيل الدخول</h2>
+          <p id="auth-description"></p>
+          <label id="name-label"
+            >الاسم<input
+              name="name"
+              maxlength="100"
+              autocomplete="name" /></label
+          ><label
+            >البريد الإلكتروني<input
+              name="email"
+              type="email"
+              required
+              maxlength="254"
+              autocomplete="username"
+              dir="ltr" /></label
+          ><label
+            >كلمة المرور<input
+              name="password"
+              type="password"
+              required
+              minlength="12"
+              maxlength="256"
+              autocomplete="current-password" /></label
+          ><label id="bootstrap-label"
+            >رمز التهيئة الأولية<input
+              name="bootstrapToken"
+              type="password"
+              maxlength="256"
+              autocomplete="off"
+            /><small
+              >قيمة BOOTSTRAP_TOKEN التي أضفتها كسرّ في Worker. لا تُستخدم بعد
+              إنشاء المدير.</small
+            ></label
+          ><button type="submit" id="auth-submit">تسجيل الدخول</button>
+        </form>
+      </section>
+      <section id="dashboard" hidden>
+        <div class="welcome">
+          <div>
+            <span class="eyebrow">لوحة الحملات</span>
+            <h1>كل رسالة، فرصة جديدة.</h1>
+            <p>إدارة الإشعارات من الفكرة إلى طلب الإرسال.</p>
+          </div>
+          <button id="refresh" class="quiet">تحديث النتائج ↻</button>
+        </div>
+        <div class="stats">
+          <article>
+            <small>الحملات المعروضة</small
+            ><strong id="campaign-count">0</strong>
+          </article>
+          <article>
+            <small>الأجهزة النشطة المعروضة</small
+            ><strong id="device-count">0</strong>
+          </article>
+          <article>
+            <small>طلبات قبلها Firebase</small
+            ><strong id="accepted-count">0</strong>
+          </article>
+        </div>
+        <nav aria-label="أقسام اللوحة">
+          <button data-tab="campaigns" class="selected">الحملات</button
+          ><button data-tab="devices">الأجهزة والربط</button
+          ><button data-tab="settings">الإعدادات</button>
+        </nav>
+        <section data-panel="campaigns">
+          <div class="campaign-layout">
+            <form id="campaign-form" class="panel">
+              <div class="row">
+                <h2 id="editor-title">حملة جديدة</h2>
+                <button type="button" id="new-campaign" class="quiet">
+                  مسح النموذج
+                </button>
+              </div>
+              <input name="id" type="hidden" /><label
+                >اسم الحملة<input
+                  name="name"
+                  required
+                  maxlength="100"
+                  placeholder="رسالة الترحيب" /></label
+              ><label
+                >عنوان الإشعار<input
+                  name="title"
+                  required
+                  maxlength="120"
+                  placeholder="شيء جديد ينتظرك ✨" /></label
+              ><label
+                >نص الإشعار<textarea
+                  name="body"
+                  required
+                  maxlength="1000"
+                  rows="3"
+                  placeholder="اكتب رسالة قصيرة وواضحة."
+                ></textarea>
+              </label>
+              <div class="fields">
+                <label
+                  >المنصة<select name="platform">
+                    <option value="android">Android</option>
+                    <option value="ios">iOS</option>
+                    <option value="all">كل المنصات</option>
+                  </select></label
+                ><label
+                  >شريحة الجمهور<input
+                    name="segment"
+                    value="test"
+                    required
+                    maxlength="64"
+                    pattern="[A-Za-z0-9_-]+"
+                    dir="ltr"
+                  /><small>test للاختبار، أو all لكل الشرائح.</small></label
+                >
+              </div>
+              <label
+                >رابط عند فتح الإشعار<input
+                  name="link"
+                  maxlength="2048"
+                  placeholder="nabdh://campaign/welcome"
+                  dir="ltr" /></label
+              ><label
+                >موعد الإرسال — اختياري<input
+                  name="scheduled_at"
+                  type="datetime-local" /><small id="timezone"></small></label
+              ><button type="submit">حفظ الحملة</button>
+            </form>
+            <aside class="preview">
+              <span class="eyebrow">معاينة الإشعار</span>
+              <div class="phone">
+                <div class="phone-top">نبض <span>الآن</span></div>
+                <h3 id="preview-title">عنوان رسالتك هنا</h3>
+                <p id="preview-body">كلمات قليلة، تواصل أفضل.</p>
+              </div>
+              <p>
+                المعاينة لا ترسل إشعارًا. بعد الحفظ اضغط إرسال وراجع جمهور
+                الحملة قبل التأكيد.
+              </p>
+              <p>
+                الإرسال يتم على دفعات صغيرة، ويستكمل العامل المجدول العمل كل
+                دقيقة.
+              </p>
+            </aside>
+          </div>
+          <div class="panel list-panel">
+            <h2>حملاتك</h2>
+            <p>
+              أحدث 100 حملة. القبول لدى Firebase لا يثبت الوصول أو فتح الإشعار.
+            </p>
+            <div id="campaign-list"></div>
+          </div>
+          <div class="panel list-panel">
+            <h2>سجل طلبات الإرسال</h2>
+            <p>
+              أحدث 100 نتيجة. الحالة «غير معروف» لا تُعاد تلقائيًا لتجنب إرسال
+              مكرر.
+            </p>
+            <div id="delivery-list"></div>
+          </div>
+        </section>
+        <section data-panel="devices" hidden>
+          <div class="panel">
+            <h2>اربط هاتف الاختبار</h2>
+            <p>
+              في تطبيق Android أدخل عنوان اللوحة أدناه، ثم رمز ربط صالح لمدة عشر
+              دقائق ولمرة واحدة.
+            </p>
+            <label>عنوان اللوحة<input id="cms-url" readonly dir="ltr" /></label
+            ><button id="pairing-code">إنشاء رمز ربط</button>
+            <div id="pairing-result" hidden>
+              <label
+                >رمز الربط<input id="pairing-value" readonly dir="ltr" /></label
+              ><small id="pairing-expiry"></small>
+            </div>
+            <p>
+              الجهاز يُسجّل ضمن شريحة test. الربط يتطلب APK حقيقيًا؛ معاينة
+              GitHub Pages لا تستقبل FCM.
+            </p>
+          </div>
+          <div class="panel list-panel">
+            <h2>الأجهزة</h2>
+            <div id="device-list"></div>
+          </div>
+        </section>
+        <section data-panel="settings" hidden>
+          <div class="panel">
+            <h2>إعدادات Firebase</h2>
+            <p id="firebase-status"></p>
+            <p>
+              أضف ملف حساب الخدمة كسرّ اسمه FCM_SERVICE_ACCOUNT_JSON في إعدادات
+              Worker. لا تضفه إلى GitHub أو ملفات الواجهة.
+            </p>
+            <button id="check-firebase">فحص إعداد Firebase دون إرسال</button>
+            <h3>الخطة المجانية</h3>
+            <p>
+              العنوان المجاني workers.dev لا يحتاج دومين. Workers وD1 لهما حدود
+              مجانية؛ راقب الاستهلاك في Cloudflare ولا تفعّل خطة مدفوعة. هذه
+              النسخة مهيأة للاختبار والاستخدام المحدود، وليست خدمة إرسال جماعي
+              كبيرة.
+            </p>
+            <h3>الحملات المجدولة</h3>
+            <p>
+              يتحقق العامل كل دقيقة. تابع قبول الطلبات من سجل الإرسال، ثم تحقق
+              من الاستقبال على هاتفك.
+            </p>
+          </div>
+        </section>
+      </section>
+    </main>
+    <footer>نبض · رسالة ذات معنى</footer>
+  </body>
+</html>
