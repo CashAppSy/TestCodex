@@ -52,11 +52,25 @@ npm run android
 npm run build:apk
 ```
 
-ستجده عادةً في `android/app/build/outputs/apk/debug/app-debug.apk`. هذا APK تطوير يحتاج Metro أيضًا. عند تشغيل Metro من حاسوب متصل عبر USB، استخدم `adb reverse tcp:8081 tcp:8081` إذا لزم. الحصول على APK مستقل يتطلب build release أو خدمة EAS مع إعداد التوقيع.
+ستجده عادةً في `android/app/build/outputs/apk/debug/app-debug.apk`. هذا APK تطوير يحتاج Metro أيضًا. عند تشغيل Metro من حاسوب متصل عبر USB، استخدم `adb reverse tcp:8081 tcp:8081` إذا لزم.
+
+لبناء APK اختبار مستقل دون Metro لأجهزة ARM64:
+
+```sh
+EXPO_NO_TELEMETRY=1 NODE_ENV=production npm run build:apk:standalone
+```
+
+الملف الناتج `android/app/build/outputs/apk/release/app-release.apk` يتضمن حزمة الواجهة ويعمل على Android 7.0 أو أحدث. يحتاج Google Play Services لاستقبال FCM. يستخدم قالب Expo الحالي مفتاح توقيع التطوير حتى في هذا البناء؛ يصلح للاختبار المباشر، ويتطلب توزيع الإنتاج إعداد مفتاح توقيع خاص. لا تحتاج EAS أو خدمة بناء مدفوعة. إضافة `plugins/with-notification-color.cjs` تعالج تعارض لون الإشعار بين Expo وFirebase عند توليد Android؛ احتفظ بها في بداية قائمة plugins لأن تعديلات manifest تنفذ بترتيب عكسي.
 
 تم التحقق من ملف Android للمشروع `nabed-549b0` والحزمة `com.nabdh.testapp`، وتوليد مشروع Android بنجاح. نجحت مصادقة حساب الخدمة وفحص FCM HTTP v1 باستخدام `validate_only`، دون إرسال إشعار. هذه الفحوص لا تثبت وصول إشعارات إلى هاتف؛ يلزم بناء التطبيق، وربطه بلوحة متاحة للهاتف، ثم اختبار جهاز حقيقي.
 
-في بيئة cloud الحالية ثُبّت Android SDK وJava 17، لكن بناء APK توقّف عند تنزيل مكتبة React Native من `repo.reactnative.dev` بسبب حظر الشبكة HTTP 403. أُضيف النطاق إلى مسودة إعدادات البيئة؛ يلزم تطبيق إعدادات الشبكة ثم إعادة البناء. لم يُنتج APK بعد. أداة البناء المحلية `python3 /workspace/.nabdh-tools/build-android.py` تضبط SDK وJava والشهادات المعتمدة والـproxy، وتبني نسخة debug لمعمارية `arm64-v8a` بأربعة workers. هذه الأداة والـSDK إعدادات محلية للبيئة خارج المستودع.
+في بيئة cloud الحالية ثُبّت Android SDK وJava 17، وأصبح تنزيل React Native من `repo.reactnative.dev` متاحًا. نجح بناء APK مستقل لمعمارية `arm64-v8a`، وفحص توقيعه ووجود حزمة الواجهة داخله وفحص خلوه من مفتاح حساب خدمة Firebase. حجمه نحو 28 ميغابايت. أداة البناء المحلية تضبط SDK وJava والشهادات المعتمدة والـproxy وتعطل Expo telemetry لتجنب الكتابة في home غير القابل للكتابة:
+
+```sh
+NODE_ENV=production python3 /workspace/.nabdh-tools/build-android.py assembleRelease -PreactNativeArchitectures=arm64-v8a
+```
+
+هذه الأداة والـSDK إعدادات محلية للبيئة خارج المستودع. لم يُختبر الاستقبال على هاتف فعلي بعد. عنوان اللوحة المنشورة للربط: `https://testcodex.eng-ali-m-ibrahim.workers.dev`.
 
 `ANDROID_PACKAGE` يغير الاسم قبل prebuild. `GOOGLE_SERVICES_FILE` يغير موقع ملف العميل. لا تستخدم ملف حساب الخدمة بدلًا من `google-services.json`. عند تغيير مشروع Firebase/اسم الحزمة بعد توليد مشروع Android، أعد توليد المشروع الأصلي بعد حفظ أي تغييرات يدوية؛ لا يعتمد التطبيق على ملفات Android مولدة محفوظة في Git.
 
@@ -90,7 +104,7 @@ npm run build:apk
 
 توقيت الجهاز محلي. روابط التطبيق المدعومة `nabdh://campaign/<id>` وروابط HTTPS الخارجية التي يفتحها المستخدم صراحةً. لا تُنفذ `javascript:` أو روابط ملفات أو HTTP من رسائل الإشعارات. فتح الحملة التجريبية لا يحمّل بيانات حملات إدارية؛ إنه مسار لإظهار تجربة الفتح.
 
-لا تُرسل هذه النسخة وصولًا/فتحًا إلى لوحة CMS، ولا تفحص receipt خاصًا بـExpo. قبول الطلب لدى FCM في اللوحة يظل منفصلًا عن استلام الجهاز. الاتصال الحقيقي والاستقبال على Android لم يتم اختباره بعد، لعدم توفر إعداد Firebase وجهاز/محاكي جاهز.
+لا تُرسل هذه النسخة وصولًا/فتحًا إلى لوحة CMS، ولا تفحص receipt خاصًا بـExpo. قبول الطلب لدى FCM في اللوحة يظل منفصلًا عن استلام الجهاز. إعداد Firebase متوفر، لكن الاستقبال على Android لم يُختبر بعد لعدم توفر هاتف متصل أو محاكي جاهز.
 
 أثناء التطوير المحلي فقط، يسمح التطبيق بعنوان HTTP لشبكة محلية عندما تكون `__DEV__=true`. قد تحتاج `ALLOW_INSECURE_DEV_HTTP=true` **وقت prebuild** في نسخة debug. المحاكي يستخدم `10.0.2.2` للوصول لحاسوبك، وليس `localhost`. لا تفعّل هذا الإعداد في release؛ استخدم HTTPS في النشر.
 

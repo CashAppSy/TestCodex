@@ -20,6 +20,7 @@ export default (): ExpoConfig => {
         : {}),
     },
     plugins: [
+      "./plugins/with-notification-color.cjs",
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
       ["expo-notifications", { defaultChannel: "nabdh", color: "#365e42" }],
