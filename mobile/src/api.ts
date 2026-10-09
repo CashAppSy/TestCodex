@@ -1,5 +1,5 @@
 import { validateCmsUrl } from "./model.ts";
-import type { Connection } from "./storage";
+import type { Connection, MobileAccount } from "./storage";
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -131,5 +131,53 @@ export async function disconnectDevice(connection: Connection) {
     {},
     connection.credential,
     "DELETE",
+  );
+}
+
+export async function authenticateAccount(
+  phone: string,
+  password: string,
+  token: string,
+  name?: string,
+): Promise<Connection> {
+  const url = "https://testcodex.eng-ali-m-ibrahim.workers.dev";
+  const result = await request(
+    url,
+    name === undefined ? "/api/mobile/login" : "/api/mobile/register",
+    {
+      phone,
+      password,
+      token,
+      platform: "android",
+      ...(name === undefined ? {} : { name }),
+    },
+  );
+  if (
+    typeof result.credential !== "string" ||
+    !/^[a-f0-9]{64}$/.test(result.credential) ||
+    !Number.isSafeInteger(result.deviceId) ||
+    result.deviceId < 1 ||
+    !Number.isSafeInteger(result.account?.id) ||
+    result.account.id < 1 ||
+    typeof result.account.name !== "string" ||
+    typeof result.account.phone !== "string"
+  )
+    throw new Error("رد تسجيل الدخول غير صالح.");
+  return {
+    url,
+    credential: result.credential,
+    deviceId: result.deviceId,
+    account: result.account,
+  };
+}
+export async function currentAccount(
+  connection: Connection,
+): Promise<MobileAccount> {
+  return request(
+    connection.url,
+    "/api/mobile/me",
+    undefined,
+    connection.credential,
+    "GET",
   );
 }

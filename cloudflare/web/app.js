@@ -200,7 +200,7 @@ function renderSubscribers() {
     const buttons = row(
       $("subscriber-list"),
       user.name,
-      `رقم المشترك: ${user.reference}`,
+      `${user.has_account ? "حساب تطبيق · هاتف" : "رقم المشترك"}: ${user.reference}`,
     );
     buttons.append(
       action("تعديل الاسم", () => {
@@ -619,16 +619,18 @@ function render() {
       select.append(option);
     }
     select.value = d.subscriber_id ?? "";
-    buttons.append(
-      select,
-      action("حفظ ربط المشترك", async () => {
-        await api(`/devices/${d.id}/subscriber`, "PUT", {
-          subscriberId: select.value ? Number(select.value) : null,
-        });
-        await refresh();
-        notice("تم تحديث ربط الجهاز بالمشترك.");
-      }),
-    );
+    select.disabled = !!d.account_linked;
+    const assign = action("حفظ ربط المشترك", async () => {
+      await api(`/devices/${d.id}/subscriber`, "PUT", {
+        subscriberId: select.value ? Number(select.value) : null,
+      });
+      await refresh();
+      notice("تم تحديث ربط الجهاز بالمشترك.");
+    });
+    assign.disabled = !!d.account_linked;
+    buttons.append(select, assign);
+    if (d.account_linked)
+      buttons.append(element("small", "مرتبط تلقائيًا بحساب التطبيق"));
     if (d.active)
       buttons.append(
         action(

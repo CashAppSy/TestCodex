@@ -87,7 +87,7 @@ export default function PaymentScreen({
     void run(async () => {
       if (!connection || preview)
         throw new Error("اربط نسخة Android باللوحة أولًا.");
-      const key = `cash-mobile-payment-attempt:${connection.url}:${connection.deviceId}`;
+      const key = `cash-mobile-payment-attempt:${connection.url}:${connection.deviceId}:${connection.account?.id || "legacy"}`;
       const saved = await AsyncStorage.getItem(key);
       const attempt = saved
         ? JSON.parse(saved)

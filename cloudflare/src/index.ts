@@ -83,7 +83,7 @@ async function mobileDevice(env: Env, request: Request) {
   if (!token) throw new HttpError(401, "جلسة الجهاز غير صالحة.");
   const hash = await digest(token);
   const row = await env.DB.prepare(
-    "SELECT device_id FROM mobile_sessions WHERE credential_hash=? AND expires_at>?",
+    "SELECT s.device_id FROM mobile_sessions s LEFT JOIN mobile_accounts a ON a.id=s.account_id JOIN devices d ON d.id=s.device_id WHERE s.credential_hash=? AND s.expires_at>? AND (s.account_id IS NULL OR (d.active=1 AND d.subscriber_id=a.subscriber_id))",
   )
     .bind(hash, Date.now())
     .first<{ device_id: number }>();
@@ -105,6 +105,169 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
     });
   }
   if (path.startsWith("/api/mobile/")) {
+    if (
+      ["/api/mobile/register", "/api/mobile/login"].includes(path) &&
+      method === "POST"
+    ) {
+      const b = await readBody(request);
+      const phone = text(b, "phone", 40)
+        .replace(/[٠-٩]/g, (n) => String("٠١٢٣٤٥٦٧٨٩".indexOf(n)))
+        .replace(/[۰-۹]/g, (n) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(n)))
+        .replace(/[\s()\-]/g, "")
+        .replace(/^00/, "+");
+      const password = b.password;
+      const registering = path.endsWith("/register");
+      const ip = request.headers.get("CF-Connecting-IP") || "local";
+      await budget(
+        env,
+        `account:${registering ? "register" : "login"}:${ip}`,
+        registering ? 5 : 15,
+        registering ? 3600000 : 900000,
+      );
+      await budget(env, `account-phone:${phone}`, 15, 900000);
+      if (
+        !/^\+[1-9][0-9]{7,14}$/.test(phone) ||
+        typeof password !== "string" ||
+        password.length < 8 ||
+        password.length > 128
+      )
+        throw new HttpError(
+          400,
+          "أدخل رقم الهاتف الدولي مثل +963… وكلمة مرور من 8 إلى 128 حرفًا.",
+        );
+      const token = text(b, "token", 4096);
+      if (!validToken(token) || b.platform !== "android")
+        throw new HttpError(400, "تعذر تسجيل جهاز الإشعارات.");
+      if (registering) {
+        const name = text(b, "name", 100);
+        if (
+          await env.DB.prepare("SELECT id FROM subscribers WHERE reference=?")
+            .bind(phone)
+            .first()
+        )
+          throw new HttpError(
+            409,
+            "الرقم مسجل بالفعل. استخدم تسجيل الدخول أو تواصل مع مدير اللوحة.",
+          );
+        const claim = random(),
+          hash = await passwordHash(password),
+          now = new Date().toISOString();
+        await env.DB.batch([
+          env.DB.prepare(
+            "INSERT INTO subscribers(reference,name,created_at,registration_claim) VALUES(?,?,?,?) ON CONFLICT(reference) DO NOTHING",
+          ).bind(phone, name, now, claim),
+          env.DB.prepare(
+            "INSERT INTO mobile_accounts(subscriber_id,password_hash,created_at) SELECT id,?,? FROM subscribers WHERE reference=? AND registration_claim=? ON CONFLICT(subscriber_id) DO NOTHING",
+          ).bind(hash, now, phone, claim),
+        ]);
+        const created = await env.DB.prepare(
+          "SELECT a.password_hash FROM mobile_accounts a JOIN subscribers s ON s.id=a.subscriber_id WHERE s.reference=?",
+        )
+          .bind(phone)
+          .first<{ password_hash: string }>();
+        if (!created || !equal(created.password_hash, hash))
+          throw new HttpError(409, "الرقم مسجل بالفعل. استخدم تسجيل الدخول.");
+      }
+      const account = await env.DB.prepare(
+        "SELECT a.id,a.subscriber_id,a.password_hash,s.name,s.reference AS phone FROM mobile_accounts a JOIN subscribers s ON s.id=a.subscriber_id WHERE s.reference=?",
+      )
+        .bind(phone)
+        .first<{
+          id: number;
+          subscriber_id: number;
+          password_hash: string;
+          name: string;
+          phone: string;
+        }>();
+      const salt =
+        account?.password_hash.split(":")[0] ||
+        "00000000000000000000000000000000";
+      if (
+        !equal(await passwordHash(password, salt), account?.password_hash || "")
+      )
+        throw new HttpError(401, "رقم الهاتف أو كلمة المرور غير صحيحة.");
+      if (!account)
+        throw new HttpError(401, "رقم الهاتف أو كلمة المرور غير صحيحة.");
+      const old = await env.DB.prepare(
+        "SELECT id,subscriber_id,active FROM devices WHERE token=?",
+      )
+        .bind(token)
+        .first<{ id: number; subscriber_id: number | null; active: number }>();
+      if (
+        old &&
+        old.subscriber_id !== account.subscriber_id &&
+        old.active &&
+        old.subscriber_id !== null
+      )
+        throw new HttpError(
+          409,
+          "سجّل الخروج من الحساب المرتبط بهذا الجهاز أولًا.",
+        );
+      const credential = random(),
+        credentialHash = await digest(credential);
+      const statements = [];
+      if (old && old.subscriber_id !== account.subscriber_id) {
+        // Retain old device history with a revoked token; a new account gets a new device ID.
+        statements.push(
+          env.DB.prepare(
+            "DELETE FROM mobile_sessions WHERE device_id=? AND EXISTS(SELECT 1 FROM devices WHERE id=? AND token=? AND (active=0 OR subscriber_id IS NULL))",
+          ).bind(old.id, old.id, token),
+        );
+        statements.push(
+          env.DB.prepare(
+            "UPDATE devices SET token=?,active=0 WHERE id=? AND token=? AND (active=0 OR subscriber_id IS NULL)",
+          ).bind(`revoked_${random()}`, old.id, token),
+        );
+      }
+      statements.push(
+        env.DB.prepare(
+          "INSERT INTO devices(token,platform,segment,created_at,subscriber_id) VALUES(?,'android','test',?,?) ON CONFLICT(token) DO UPDATE SET active=1 WHERE devices.subscriber_id=excluded.subscriber_id",
+        ).bind(token, new Date().toISOString(), account.subscriber_id),
+        env.DB.prepare(
+          "DELETE FROM mobile_sessions WHERE device_id=(SELECT id FROM devices WHERE token=? AND subscriber_id=?)",
+        ).bind(token, account.subscriber_id),
+        env.DB.prepare(
+          "INSERT INTO mobile_sessions(credential_hash,device_id,expires_at,account_id) SELECT ?,id,?,? FROM devices WHERE token=? AND subscriber_id=?",
+        ).bind(
+          credentialHash,
+          Date.now() + 2592000000,
+          account.id,
+          token,
+          account.subscriber_id,
+        ),
+        env.DB.prepare(
+          "SELECT device_id FROM mobile_sessions WHERE credential_hash=?",
+        ).bind(credentialHash),
+      );
+      const result = await env.DB.batch(statements);
+      const session = result[result.length - 1].results[0] as
+        { device_id: number } | undefined;
+      if (!session)
+        throw new HttpError(
+          409,
+          "الجهاز مرتبط بحساب آخر. سجّل الخروج ثم حاول مجددًا.",
+        );
+      return json({
+        deviceId: session.device_id,
+        credential,
+        segment: "test",
+        account: {
+          id: account.subscriber_id,
+          name: account.name,
+          phone: account.phone,
+        },
+      });
+    }
+    if (path === "/api/mobile/me" && method === "GET") {
+      const device = await mobileDevice(env, request);
+      const user = await env.DB.prepare(
+        "SELECT s.id,s.name,s.reference AS phone FROM subscribers s JOIN mobile_accounts a ON a.subscriber_id=s.id JOIN mobile_sessions m ON m.account_id=a.id WHERE m.credential_hash=? AND m.device_id=?",
+      )
+        .bind(device.hash, device.id)
+        .first();
+      if (!user) throw new HttpError(401, "سجّل دخول حسابك أولًا.");
+      return json(user);
+    }
     if (path === "/api/mobile/pair" && method === "POST") {
       await budget(
         env,
@@ -121,6 +284,17 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
         b.platform !== "android"
       )
         throw new HttpError(400, "تحقق من بيانات الربط.");
+      if (
+        await env.DB.prepare(
+          "SELECT d.id FROM devices d JOIN mobile_accounts a ON a.subscriber_id=d.subscriber_id WHERE d.token=?",
+        )
+          .bind(token)
+          .first()
+      )
+        throw new HttpError(
+          409,
+          "هذا الجهاز مرتبط بحساب. استخدم تسجيل الدخول بدل رمز الربط.",
+        );
       const credential = random(),
         credentialHash = await digest(credential),
         codeHash = await digest(code),
@@ -397,6 +571,16 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
           .first()))
     )
       throw new HttpError(400, "اختر مستخدمًا صالحًا.");
+    const owner = await env.DB.prepare(
+      "SELECT d.subscriber_id FROM devices d JOIN mobile_accounts a ON a.subscriber_id=d.subscriber_id WHERE d.id=?",
+    )
+      .bind(Number(assignment[1]))
+      .first<{ subscriber_id: number }>();
+    if (owner && owner.subscriber_id !== id)
+      throw new HttpError(
+        400,
+        "هذا الجهاز مرتبط بحساب دخول؛ تغيير صاحبه يتم بتسجيل الخروج والدخول بالحساب الآخر.",
+      );
     const row = await env.DB.prepare(
       "UPDATE devices SET subscriber_id=? WHERE id=? RETURNING id,subscriber_id",
     )
@@ -486,7 +670,7 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
         "SELECT id,name,title,body,platform,segment,link,status,scheduled_at,created_at,updated_at,completed_at,error,accepted,failed,audience_mode,subscriber_ids FROM campaigns ORDER BY id DESC LIMIT 100",
       ),
       env.DB.prepare(
-        "SELECT id,platform,segment,active,created_at,subscriber_id FROM devices ORDER BY id DESC LIMIT 100",
+        "SELECT d.id,d.platform,d.segment,d.active,d.created_at,d.subscriber_id,EXISTS(SELECT 1 FROM mobile_accounts a WHERE a.subscriber_id=d.subscriber_id) AS account_linked FROM devices d ORDER BY d.id DESC LIMIT 100",
       ),
       env.DB.prepare(
         "SELECT campaign_id,device_id,status,error,provider_id FROM deliveries ORDER BY campaign_id DESC,device_id DESC LIMIT 100",
@@ -496,7 +680,7 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
       ),
     ]);
     const subscribers = await env.DB.prepare(
-      "SELECT id,reference,name FROM subscribers ORDER BY id DESC LIMIT 1000",
+      "SELECT s.id,s.reference,s.name,EXISTS(SELECT 1 FROM mobile_accounts a WHERE a.subscriber_id=s.id) AS has_account FROM subscribers s ORDER BY s.id DESC LIMIT 1000",
     ).all();
     const types = await env.DB.prepare(
       "SELECT key,name,title,body,active FROM notification_types ORDER BY name",

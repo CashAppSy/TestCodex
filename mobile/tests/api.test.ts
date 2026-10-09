@@ -7,6 +7,8 @@ import {
   listPayments,
   payDemo,
   listNotificationTypes,
+  authenticateAccount,
+  currentAccount,
 } from "../src/api.ts";
 test("client pairs without a server API key and subsequent requests use only its device credential", async () => {
   const original = globalThis.fetch;
@@ -111,6 +113,74 @@ test("client rejects malformed pairing responses and surfaces server rejection",
     await assert.rejects(
       pair("https://cms.example.com", "CODE", "fcm-token"),
       /انتهى رمز الربط/,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("account registration and login return only a device session; passwords are not persisted", async () => {
+  const original = globalThis.fetch;
+  const requests: {
+    url: string;
+    method?: string;
+    body?: string;
+    auth: string | null;
+  }[] = [];
+  const account = { id: 42, name: "اسم المستخدم", phone: "+963944000111" };
+  try {
+    globalThis.fetch = async (url, init) => {
+      requests.push({
+        url: String(url),
+        method: init?.method,
+        body: init?.body as string | undefined,
+        auth: new Headers(init?.headers).get("Authorization"),
+      });
+      return Response.json(
+        String(url).endsWith("/me")
+          ? account
+          : { deviceId: 15, credential: "b".repeat(64), account },
+      );
+    };
+    const created = await authenticateAccount(
+      account.phone,
+      "test-password",
+      "token_" + "a".repeat(30),
+      account.name,
+    );
+    const logged = await authenticateAccount(
+      account.phone,
+      "test-password",
+      "token_" + "a".repeat(30),
+    );
+    assert.equal(created.account!.id, account.id);
+    assert.equal(logged.account!.phone, account.phone);
+    assert.equal("password" in created, false);
+    assert.equal("token" in created, false);
+    assert.equal(
+      requests[0].url,
+      "https://testcodex.eng-ali-m-ibrahim.workers.dev/api/mobile/register",
+    );
+    assert.equal(
+      requests[1].url,
+      "https://testcodex.eng-ali-m-ibrahim.workers.dev/api/mobile/login",
+    );
+    assert.equal(JSON.parse(requests[0].body!).name, account.name);
+    assert.equal(JSON.parse(requests[1].body!).password, "test-password");
+    await currentAccount(logged);
+    assert.equal(requests[2].method, "GET");
+    assert.equal(requests[2].body, undefined);
+    assert.equal(requests[2].auth, `Bearer ${logged.credential}`);
+    globalThis.fetch = async () =>
+      Response.json({ deviceId: 15, credential: "not-valid", account });
+    await assert.rejects(
+      () =>
+        authenticateAccount(
+          account.phone,
+          "test-password",
+          "token_" + "a".repeat(30),
+        ),
+      /رد تسجيل الدخول غير صالح/,
     );
   } finally {
     globalThis.fetch = original;

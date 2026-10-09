@@ -7,7 +7,7 @@
     <title>Cash Mobile · إدارة الإشعارات</title>
     <link rel="icon" type="image/png" href="/cash-mobile.png" />
     <link rel="stylesheet" href="/styles.css?v=dashboard-2" />
-    <script src="/app.js?v=dashboard-2" defer></script>
+    <script src="/app.js?v=accounts-3" defer></script>
   </head>
   <body>
     <p id="notice" role="status" hidden></p>
@@ -386,12 +386,12 @@
               <form id="subscriber-form" class="panel">
                 <h2>إضافة مشترك أو تحديثه</h2>
                 <label
-                  >رقم المشترك<input
+                  >رقم المشترك أو الهاتف<input
                     name="reference"
                     required
                     maxlength="80"
                     dir="ltr"
-                    placeholder="رقم المشترك في نظامك" /></label
+                    placeholder="رقم المشترك أو +963…" /></label
                 ><label
                   >اسم المشترك<input
                     name="name"
@@ -405,7 +405,7 @@
               </form>
               <article class="panel">
                 <h2>المشتركون</h2>
-                <p>ابحث برقم المشترك أو اسمه من شريط البحث. أحدث 1000 مشترك.</p>
+                <p>ابحث بالرقم أو الاسم. الحسابات المسجلة من التطبيق تظهر هنا تلقائيًا. أحدث 1000 مشترك.</p>
                 <div id="subscriber-list"></div>
               </article>
             </div>

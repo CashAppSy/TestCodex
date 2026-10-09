@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -36,10 +36,17 @@ import {
   clearConnection,
   type Connection,
 } from "./src/storage";
-import { pair, refreshDevice, disconnectDevice } from "./src/api";
+import {
+  pair,
+  refreshDevice,
+  disconnectDevice,
+  currentAccount,
+  ApiError,
+} from "./src/api";
+import AccountScreen from "./src/AccountScreen";
 import PaymentScreen from "./src/PaymentScreen";
 
-type Tab = "inbox" | "connect" | "about" | "payments";
+type Tab = "inbox" | "connect" | "about" | "payments" | "account";
 function Button({
   title,
   onPress,
@@ -73,10 +80,13 @@ function Button({
   );
 }
 export default function App() {
+  const sessionRef = useRef<string | null>(null);
   const [tab, setTab] = useState<Tab>("inbox");
   const [inbox, setInbox] = useState<Incoming[]>([]);
   const [connection, setConnection] = useState<Connection | null>(null);
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(
+    "https://testcodex.eng-ali-m-ibrahim.workers.dev",
+  );
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -109,10 +119,31 @@ export default function App() {
     refresh();
     const stopInbox = subscribeInbox(refresh);
     void loadConnection()
-      .then((value) => {
-        if (active) {
-          setConnection(value);
-          if (value) setUrl(value.url);
+      .then(async (value) => {
+        if (!active) return;
+        sessionRef.current = value?.credential || null;
+        setConnection(value);
+        if (value) setUrl(value.url);
+        if (value?.account) {
+          try {
+            const account = await currentAccount(value);
+            if (active && sessionRef.current === value.credential)
+              setConnection({ ...value, account });
+          } catch (failure) {
+            if (
+              failure instanceof ApiError &&
+              failure.status === 401 &&
+              sessionRef.current === value.credential
+            ) {
+              sessionRef.current = null;
+              await clearConnection();
+              await clearInbox();
+              if (active && sessionRef.current === null) {
+                setConnection(null);
+                setError("انتهت جلسة الحساب. سجّل الدخول مجددًا.");
+              }
+            }
+          }
         }
       })
       .catch(() => {
@@ -204,10 +235,21 @@ export default function App() {
   const disconnect = () =>
     void execute(async () => {
       if (!connection) return;
-      await disconnectDevice(connection);
+      try {
+        await disconnectDevice(connection);
+      } catch (failure) {
+        if (!(failure instanceof ApiError && failure.status === 401))
+          throw failure;
+      }
       await clearConnection();
+      await clearInbox();
+      setSelected(null);
+      setCampaignPage(null);
+      setPaymentId(null);
+      sessionRef.current = null;
       setConnection(null);
-      setNotice("تم إلغاء اشتراك هذا الجهاز.");
+      setTab("account");
+      setNotice("تم تسجيل الخروج وإيقاف إشعارات الحساب على هذا الجهاز.");
     });
   const renewPairing = () =>
     void execute(async () => {
@@ -336,368 +378,410 @@ export default function App() {
           {busy && (
             <ActivityIndicator color="#365e42" style={{ marginBottom: 16 }} />
           )}
-          {tab === "inbox" && campaignPage !== null ? (
-            <View style={styles.detailCard}>
-              <Text style={styles.eyebrow}>تم فتح الرابط داخل التطبيق</Text>
-              <Text accessibilityRole="header" style={styles.title}>
-                صفحة الحملة التجريبية
-              </Text>
-              <View style={styles.campaignSymbol}>
-                <Text style={styles.campaignSymbolText}>✦</Text>
-              </View>
-              <Text style={styles.paragraph}>
-                وصلت إلى هذه الشاشة من رابط الإشعار. يمكنك لاحقًا استبدالها
-                بصفحة العرض أو المنتج داخل تطبيقك.
-              </Text>
-              <View style={styles.keyRow}>
-                <Text style={styles.monospace}>{campaignPage}</Text>
-                <Text style={styles.label}>معرّف الحملة</Text>
-              </View>
-              <Button
-                secondary
-                title="العودة إلى الإشعارات"
-                onPress={() => {
-                  setCampaignPage(null);
-                  setSelected(null);
-                }}
-              />
-            </View>
-          ) : tab === "inbox" && selected ? (
-            <View style={styles.detailCard}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setSelected(null)}
-              >
-                <Text style={styles.back}>→ كل الإشعارات</Text>
-              </Pressable>
-              <Text style={styles.eyebrow}>
-                {selected.source === "demo"
-                  ? "محاكاة محلية"
-                  : "إشعار من Firebase"}
-              </Text>
-              <Text accessibilityRole="header" style={styles.title}>
-                {selected.title}
-              </Text>
-              <Text style={styles.paragraph}>{selected.body}</Text>
-              <View style={styles.detailMetadata}>
-                <Text style={styles.mutedText}>
-                  وقت الاستلام:{" "}
-                  {new Date(selected.receivedAt).toLocaleString("ar")}
-                </Text>
-                <Text style={styles.mutedText}>
-                  الحالة:{" "}
-                  {selected.openedAt ? "تم فتحه على هذا الجهاز" : "مستلم"}
-                </Text>
-                {selected.campaignId !== "" && (
-                  <Text style={styles.mutedText}>
-                    معرّف الحملة: {selected.campaignId}
-                  </Text>
-                )}
-              </View>
-              {selected.url !== "" && (
-                <>
-                  <Text style={styles.label}>الرابط المرفق</Text>
-                  <Text selectable style={styles.url}>
-                    {selected.url}
-                  </Text>
-                  <Button
-                    title={
-                      notificationDestination(selected.url)?.type === "https"
-                        ? "فتح الرابط الخارجي"
-                        : "فتح رابط الحملة"
-                    }
-                    onPress={followLink}
-                  />
-                </>
-              )}
-            </View>
-          ) : tab === "inbox" ? (
+          {tab === "account" ||
+          (!isWebPreview && !connection && tab !== "connect") ? (
+            <AccountScreen
+              connection={connection}
+              preview={isWebPreview}
+              onAuthenticated={async (value) => {
+                await clearInbox();
+                await saveConnection(value);
+                sessionRef.current = value.credential;
+                setConnection(value);
+                setUrl(value.url);
+                setTab("inbox");
+                setSelected(null);
+                setCampaignPage(null);
+                setPaymentId(null);
+                setError("");
+                setNotice(
+                  `مرحبًا ${value.account?.name}. تم ربط جهازك بحسابك تلقائيًا.`,
+                );
+              }}
+              onLogout={disconnect}
+              onSync={sync}
+              onLegacyPairing={() => setTab("connect")}
+            />
+          ) : (
             <>
-              <Text style={styles.eyebrow}>رسائلك، من الطرف الآخر</Text>
-              <Text accessibilityRole="header" style={styles.title}>
-                أهلًا بك في Cash Mobile.
-              </Text>
-              <Text style={styles.subtitle}>
-                جرّب كيف تصل رسالتك، وكيف يراها مستخدم تطبيقك.
-              </Text>
-              <View style={styles.hero}>
-                <View style={styles.heroTop}>
-                  <View style={styles.heroIcon}>
-                    <Text style={styles.heroIconText}>✳</Text>
-                  </View>
-                  <View style={styles.heroTag}>
-                    <Text style={styles.heroTagText}>
-                      {isWebPreview ? "واجهة تجريبية" : "ANDROID · FCM"}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.heroTitle}>
-                  رسالة صغيرة.<Text>{"\n"}</Text>تجربة أقرب.
-                </Text>
-                <Text style={styles.heroBody}>
-                  {isWebPreview
-                    ? "استكشف الواجهة بمحاكاة محلية. استقبال الإشعارات الفعلية يتطلب نسخة Android المربوطة بـ Firebase."
-                    : "اربط هذا الجهاز باللوحة، أرسل أول حملة، وشاهد إشعارك يصل إلى هنا."}
-                </Text>
-                <Button
-                  title="تجربة إشعار محلي"
-                  secondary
-                  onPress={demo}
-                  disabled={busy}
-                />
-              </View>
-              <View style={styles.stats}>
-                <View style={styles.stat}>
-                  <Text style={styles.statLabel}>إشعارات Firebase</Text>
-                  <Text style={styles.statValue}>
-                    {fcmCount.toString().padStart(2, "0")}
+              {tab === "inbox" && campaignPage !== null ? (
+                <View style={styles.detailCard}>
+                  <Text style={styles.eyebrow}>تم فتح الرابط داخل التطبيق</Text>
+                  <Text accessibilityRole="header" style={styles.title}>
+                    صفحة الحملة التجريبية
                   </Text>
-                  <Text style={styles.statHint}>مسجلة على هذا الجهاز</Text>
-                </View>
-                <View style={styles.stat}>
-                  <Text style={styles.statLabel}>محاكاة محلية</Text>
-                  <Text style={styles.statValue}>
-                    {(inbox.length - fcmCount).toString().padStart(2, "0")}
+                  <View style={styles.campaignSymbol}>
+                    <Text style={styles.campaignSymbolText}>✦</Text>
+                  </View>
+                  <Text style={styles.paragraph}>
+                    وصلت إلى هذه الشاشة من رابط الإشعار. يمكنك لاحقًا استبدالها
+                    بصفحة العرض أو المنتج داخل تطبيقك.
                   </Text>
-                  <Text style={styles.statHint}>لتجربة الواجهة فقط</Text>
+                  <View style={styles.keyRow}>
+                    <Text style={styles.monospace}>{campaignPage}</Text>
+                    <Text style={styles.label}>معرّف الحملة</Text>
+                  </View>
+                  <Button
+                    secondary
+                    title="العودة إلى الإشعارات"
+                    onPress={() => {
+                      setCampaignPage(null);
+                      setSelected(null);
+                    }}
+                  />
                 </View>
-              </View>
-              <View style={styles.sectionHeader}>
-                <Text accessibilityRole="header" style={styles.sectionTitle}>
-                  صندوق الإشعارات
-                </Text>
-                {inbox.length > 0 && (
+              ) : tab === "inbox" && selected ? (
+                <View style={styles.detailCard}>
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="مسح السجل"
-                    onPress={clear}
+                    onPress={() => setSelected(null)}
                   >
-                    <Text style={styles.clear}>مسح السجل</Text>
+                    <Text style={styles.back}>→ كل الإشعارات</Text>
                   </Pressable>
-                )}
-              </View>
-              {inbox.length === 0 ? (
-                <View style={styles.empty}>
-                  <View style={styles.emptyLogo}>
-                    <Text style={styles.emptyLogoText}>◉</Text>
-                  </View>
-                  <Text style={styles.emptyTitle}>أول إشعار، أول تواصل.</Text>
-                  <Text style={styles.emptyBody}>
-                    ابدأ بمحاكاة محلية، أو اربط جهاز Android{"\n"}لتجربة إرسال
-                    حقيقي من اللوحة.
+                  <Text style={styles.eyebrow}>
+                    {selected.source === "demo"
+                      ? "محاكاة محلية"
+                      : "إشعار من Firebase"}
                   </Text>
+                  <Text accessibilityRole="header" style={styles.title}>
+                    {selected.title}
+                  </Text>
+                  <Text style={styles.paragraph}>{selected.body}</Text>
+                  <View style={styles.detailMetadata}>
+                    <Text style={styles.mutedText}>
+                      وقت الاستلام:{" "}
+                      {new Date(selected.receivedAt).toLocaleString("ar")}
+                    </Text>
+                    <Text style={styles.mutedText}>
+                      الحالة:{" "}
+                      {selected.openedAt ? "تم فتحه على هذا الجهاز" : "مستلم"}
+                    </Text>
+                    {selected.campaignId !== "" && (
+                      <Text style={styles.mutedText}>
+                        معرّف الحملة: {selected.campaignId}
+                      </Text>
+                    )}
+                  </View>
+                  {selected.url !== "" && (
+                    <>
+                      <Text style={styles.label}>الرابط المرفق</Text>
+                      <Text selectable style={styles.url}>
+                        {selected.url}
+                      </Text>
+                      <Button
+                        title={
+                          notificationDestination(selected.url)?.type ===
+                          "https"
+                            ? "فتح الرابط الخارجي"
+                            : "فتح رابط الحملة"
+                        }
+                        onPress={followLink}
+                      />
+                    </>
+                  )}
                 </View>
-              ) : (
-                inbox.map((item) => (
-                  <Pressable
-                    key={item.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`فتح إشعار ${item.title}`}
-                    onPress={() => void execute(() => select(item))}
-                    style={({ pressed }) => [
-                      styles.notification,
-                      pressed && { opacity: 0.7 },
-                    ]}
-                  >
-                    <View style={styles.notificationTop}>
-                      <Text
-                        style={[
-                          styles.badge,
-                          item.source === "demo" && styles.demoBadge,
+              ) : tab === "inbox" ? (
+                <>
+                  <Text style={styles.eyebrow}>رسائلك، من الطرف الآخر</Text>
+                  <Text accessibilityRole="header" style={styles.title}>
+                    أهلًا بك في Cash Mobile.
+                  </Text>
+                  <Text style={styles.subtitle}>
+                    جرّب كيف تصل رسالتك، وكيف يراها مستخدم تطبيقك.
+                  </Text>
+                  <View style={styles.hero}>
+                    <View style={styles.heroTop}>
+                      <View style={styles.heroIcon}>
+                        <Text style={styles.heroIconText}>✳</Text>
+                      </View>
+                      <View style={styles.heroTag}>
+                        <Text style={styles.heroTagText}>
+                          {isWebPreview ? "واجهة تجريبية" : "ANDROID · FCM"}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.heroTitle}>
+                      رسالة صغيرة.<Text>{"\n"}</Text>تجربة أقرب.
+                    </Text>
+                    <Text style={styles.heroBody}>
+                      {isWebPreview
+                        ? "استكشف الواجهة بمحاكاة محلية. استقبال الإشعارات الفعلية يتطلب نسخة Android المربوطة بـ Firebase."
+                        : "اربط هذا الجهاز باللوحة، أرسل أول حملة، وشاهد إشعارك يصل إلى هنا."}
+                    </Text>
+                    <Button
+                      title="تجربة إشعار محلي"
+                      secondary
+                      onPress={demo}
+                      disabled={busy}
+                    />
+                  </View>
+                  <View style={styles.stats}>
+                    <View style={styles.stat}>
+                      <Text style={styles.statLabel}>إشعارات Firebase</Text>
+                      <Text style={styles.statValue}>
+                        {fcmCount.toString().padStart(2, "0")}
+                      </Text>
+                      <Text style={styles.statHint}>مسجلة على هذا الجهاز</Text>
+                    </View>
+                    <View style={styles.stat}>
+                      <Text style={styles.statLabel}>محاكاة محلية</Text>
+                      <Text style={styles.statValue}>
+                        {(inbox.length - fcmCount).toString().padStart(2, "0")}
+                      </Text>
+                      <Text style={styles.statHint}>لتجربة الواجهة فقط</Text>
+                    </View>
+                  </View>
+                  <View style={styles.sectionHeader}>
+                    <Text
+                      accessibilityRole="header"
+                      style={styles.sectionTitle}
+                    >
+                      صندوق الإشعارات
+                    </Text>
+                    {inbox.length > 0 && (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="مسح السجل"
+                        onPress={clear}
+                      >
+                        <Text style={styles.clear}>مسح السجل</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                  {inbox.length === 0 ? (
+                    <View style={styles.empty}>
+                      <View style={styles.emptyLogo}>
+                        <Text style={styles.emptyLogoText}>◉</Text>
+                      </View>
+                      <Text style={styles.emptyTitle}>
+                        أول إشعار، أول تواصل.
+                      </Text>
+                      <Text style={styles.emptyBody}>
+                        ابدأ بمحاكاة محلية، أو اربط جهاز Android{"\n"}لتجربة
+                        إرسال حقيقي من اللوحة.
+                      </Text>
+                    </View>
+                  ) : (
+                    inbox.map((item) => (
+                      <Pressable
+                        key={item.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`فتح إشعار ${item.title}`}
+                        onPress={() => void execute(() => select(item))}
+                        style={({ pressed }) => [
+                          styles.notification,
+                          pressed && { opacity: 0.7 },
                         ]}
                       >
-                        {item.source === "demo"
-                          ? "محاكاة محلية"
-                          : "Firebase FCM"}
-                      </Text>
-                      <Text style={styles.notificationTime}>
-                        {new Date(item.receivedAt).toLocaleTimeString("ar", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </Text>
-                    </View>
-                    <Text style={styles.notificationTitle}>{item.title}</Text>
-                    <Text numberOfLines={2} style={styles.notificationBody}>
-                      {item.body}
+                        <View style={styles.notificationTop}>
+                          <Text
+                            style={[
+                              styles.badge,
+                              item.source === "demo" && styles.demoBadge,
+                            ]}
+                          >
+                            {item.source === "demo"
+                              ? "محاكاة محلية"
+                              : "Firebase FCM"}
+                          </Text>
+                          <Text style={styles.notificationTime}>
+                            {new Date(item.receivedAt).toLocaleTimeString(
+                              "ar",
+                              {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              },
+                            )}
+                          </Text>
+                        </View>
+                        <Text style={styles.notificationTitle}>
+                          {item.title}
+                        </Text>
+                        <Text numberOfLines={2} style={styles.notificationBody}>
+                          {item.body}
+                        </Text>
+                        <Text style={styles.notificationFooter}>
+                          {item.openedAt ? "تم فتحه" : "اضغط لفتح الإشعار"} ←
+                        </Text>
+                      </Pressable>
+                    ))
+                  )}
+                  <View style={styles.bottomNote}>
+                    <Text style={styles.bottomNoteText}>
+                      ✦ جهاز الاختبار مرتبط بشريحة test فقط عند إقرانه.
                     </Text>
-                    <Text style={styles.notificationFooter}>
-                      {item.openedAt ? "تم فتحه" : "اضغط لفتح الإشعار"} ←
-                    </Text>
-                  </Pressable>
-                ))
-              )}
-              <View style={styles.bottomNote}>
-                <Text style={styles.bottomNoteText}>
-                  ✦ جهاز الاختبار مرتبط بشريحة test فقط عند إقرانه.
-                </Text>
-              </View>
-            </>
-          ) : null}
-          {tab === "payments" && (
-            <PaymentScreen
-              connection={connection}
-              selectedId={paymentId}
-              preview={isWebPreview}
-            />
-          )}
-          {tab === "connect" && (
-            <>
-              <Text style={styles.eyebrow}>من لوحتك إلى جهازك</Text>
-              <Text accessibilityRole="header" style={styles.title}>
-                ربط اللوحة.
-              </Text>
-              <Text style={styles.subtitle}>
-                رمز مؤقت بدلًا من وضع مفتاح الخادم في التطبيق.
-              </Text>
-              <View style={styles.formCard}>
-                <View style={styles.formHeader}>
-                  <Text style={styles.sectionTitle}>
-                    {connection ? "الجهاز مرتبط" : "جهّز أول اتصال"}
-                  </Text>
-                  <Text style={styles.badge}>
-                    {connection ? "شريحة test" : "خطوتان فقط"}
-                  </Text>
-                </View>
-                <Text style={styles.label}>عنوان اللوحة</Text>
-                <TextInput
-                  accessibilityLabel="عنوان اللوحة"
-                  style={styles.input}
-                  value={url}
-                  onChangeText={setUrl}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                  placeholder="https://cms.example.com"
-                  placeholderTextColor="#a5ad9f"
-                  editable={!connection && !busy}
-                />
-                {!connection && (
-                  <>
-                    <Text style={styles.label}>رمز الربط</Text>
-                    <TextInput
-                      accessibilityLabel="رمز الربط"
-                      style={styles.input}
-                      value={code}
-                      onChangeText={setCode}
-                      autoCapitalize="characters"
-                      autoCorrect={false}
-                      maxLength={32}
-                      placeholder="ABCD-1234-EF56-7890"
-                      placeholderTextColor="#a5ad9f"
-                    />
-                    <Text style={styles.hint}>
-                      من اللوحة: الأجهزة والجمهور ← إنشاء رمز ربط. صالح 10 دقائق
-                      ولمرة واحدة.
-                    </Text>
-                    <Button
-                      title={
-                        isWebPreview
-                          ? "الربط متاح في نسخة Android"
-                          : "طلب الإذن وربط الجهاز"
-                      }
-                      onPress={connect}
-                      disabled={busy || isWebPreview}
-                    />
-                  </>
-                )}
-                {connection && (
-                  <>
-                    <View style={styles.keyRow}>
-                      <Text style={styles.monospace}>
-                        #{connection.deviceId}
-                      </Text>
-                      <Text style={styles.label}>معرّف الجهاز في اللوحة</Text>
-                    </View>
-                    <Button
-                      title="تحديث تسجيل الجهاز"
-                      onPress={sync}
-                      disabled={busy}
-                    />
-                    <View style={{ height: 12 }} />
-                    <Button
-                      title="إلغاء الاشتراك وفصل الجهاز"
-                      secondary
-                      onPress={disconnect}
-                      disabled={busy}
-                    />
-                    <View style={{ height: 12 }} />
-                    <Button
-                      title="إعادة الربط برمز جديد"
-                      secondary
-                      onPress={renewPairing}
-                      disabled={busy}
-                    />
-                  </>
-                )}
-              </View>
-              <View style={styles.stepsCard}>
-                <Text style={styles.sectionTitle}>
-                  تجربتك الأولى، خطوة بخطوة
-                </Text>
-                {[
-                  [
-                    "01",
-                    "ثبّت نسخة Android",
-                    "يلزم ملف إعداد Firebase وبناء أصلي؛ Expo Go لا يدعم هذا الربط.",
-                  ],
-                  [
-                    "02",
-                    "اربط الجهاز باللوحة",
-                    "امنح إذن الإشعارات، وأدخل عنوان اللوحة ورمز الربط.",
-                  ],
-                  [
-                    "03",
-                    "أرسل حملة اختبار",
-                    "اختر Android وشريحة test، ثم جرّب الاستقبال والتطبيق مفتوح وفي الخلفية.",
-                  ],
-                ].map(([number, title, text]) => (
-                  <View style={styles.step} key={number}>
-                    <View style={styles.stepNumber}>
-                      <Text style={styles.stepNumberText}>{number}</Text>
-                    </View>
-                    <View style={styles.stepContent}>
-                      <Text style={styles.stepTitle}>{title}</Text>
-                      <Text style={styles.stepBody}>{text}</Text>
-                    </View>
                   </View>
-                ))}
-              </View>
-            </>
-          )}
-          {tab === "about" && (
-            <>
-              <Text style={styles.eyebrow}>مساحة آمنة للتجربة</Text>
-              <Text accessibilityRole="header" style={styles.title}>
-                عن التطبيق.
-              </Text>
-              <View style={styles.formCard}>
-                <Text style={styles.sectionTitle}>نسخة الاختبار · 0.1</Text>
-                <Text style={styles.paragraph}>
-                  هذه واجهة اختبار Android لاستقبال رسائل Firebase Cloud
-                  Messaging المرسلة من لوحة Cash Mobile.
-                </Text>
-                <Text style={styles.paragraph}>
-                  عندما يكون التطبيق مفتوحًا: يُحفظ الإشعار في الصندوق ويظهر
-                  إشعار محلي في النظام. في الخلفية: يعرض Android إشعار FCM،
-                  ويؤدي الضغط عليه إلى فتح التطبيق.
-                </Text>
-                <Text style={styles.paragraph}>
-                  سجل الصندوق محلي ويحتفظ بآخر 100 رسالة. لا يرسل إحصائيات
-                  الوصول أو الفتح إلى اللوحة، وقد لا يسجل كل رسائل الخلفية إذا
-                  منع Android تنفيذ التطبيق.
-                </Text>
-                <Text style={styles.paragraph}>
-                  لا يتم تخزين مفتاح حساب خدمة Firebase أو مفتاح API العام للوحة
-                  في التطبيق. جلسة هذا الجهاز فقط محفوظة في Android SecureStore.
-                </Text>
-                {isWebPreview && (
-                  <Text style={styles.previewNote}>
-                    أنت في معاينة الويب: لا اتصال بـ FCM، ولا ربط أجهزة، ولا
-                    إثبات وصول فعلي.
+                </>
+              ) : null}
+              {tab === "payments" && (
+                <PaymentScreen
+                  connection={connection}
+                  selectedId={paymentId}
+                  preview={isWebPreview}
+                />
+              )}
+              {tab === "connect" && (
+                <>
+                  <Text style={styles.eyebrow}>من لوحتك إلى جهازك</Text>
+                  <Text accessibilityRole="header" style={styles.title}>
+                    ربط اللوحة.
                   </Text>
-                )}
-              </View>
+                  <Text style={styles.subtitle}>
+                    رمز مؤقت بدلًا من وضع مفتاح الخادم في التطبيق.
+                  </Text>
+                  <View style={styles.formCard}>
+                    <View style={styles.formHeader}>
+                      <Text style={styles.sectionTitle}>
+                        {connection ? "الجهاز مرتبط" : "جهّز أول اتصال"}
+                      </Text>
+                      <Text style={styles.badge}>
+                        {connection ? "شريحة test" : "خطوتان فقط"}
+                      </Text>
+                    </View>
+                    <Text style={styles.label}>عنوان اللوحة</Text>
+                    <TextInput
+                      accessibilityLabel="عنوان اللوحة"
+                      style={styles.input}
+                      value={url}
+                      onChangeText={setUrl}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="url"
+                      placeholder="https://cms.example.com"
+                      placeholderTextColor="#a5ad9f"
+                      editable={!connection && !busy}
+                    />
+                    {!connection && (
+                      <>
+                        <Text style={styles.label}>رمز الربط</Text>
+                        <TextInput
+                          accessibilityLabel="رمز الربط"
+                          style={styles.input}
+                          value={code}
+                          onChangeText={setCode}
+                          autoCapitalize="characters"
+                          autoCorrect={false}
+                          maxLength={32}
+                          placeholder="ABCD-1234-EF56-7890"
+                          placeholderTextColor="#a5ad9f"
+                        />
+                        <Text style={styles.hint}>
+                          من اللوحة: الأجهزة والجمهور ← إنشاء رمز ربط. صالح 10
+                          دقائق ولمرة واحدة.
+                        </Text>
+                        <Button
+                          title={
+                            isWebPreview
+                              ? "الربط متاح في نسخة Android"
+                              : "طلب الإذن وربط الجهاز"
+                          }
+                          onPress={connect}
+                          disabled={busy || isWebPreview}
+                        />
+                      </>
+                    )}
+                    {connection && (
+                      <>
+                        <View style={styles.keyRow}>
+                          <Text style={styles.monospace}>
+                            #{connection.deviceId}
+                          </Text>
+                          <Text style={styles.label}>
+                            معرّف الجهاز في اللوحة
+                          </Text>
+                        </View>
+                        <Button
+                          title="تحديث تسجيل الجهاز"
+                          onPress={sync}
+                          disabled={busy}
+                        />
+                        <View style={{ height: 12 }} />
+                        <Button
+                          title="إلغاء الاشتراك وفصل الجهاز"
+                          secondary
+                          onPress={disconnect}
+                          disabled={busy}
+                        />
+                        <View style={{ height: 12 }} />
+                        <Button
+                          title="إعادة الربط برمز جديد"
+                          secondary
+                          onPress={renewPairing}
+                          disabled={busy}
+                        />
+                      </>
+                    )}
+                  </View>
+                  <View style={styles.stepsCard}>
+                    <Text style={styles.sectionTitle}>
+                      تجربتك الأولى، خطوة بخطوة
+                    </Text>
+                    {[
+                      [
+                        "01",
+                        "ثبّت نسخة Android",
+                        "يلزم ملف إعداد Firebase وبناء أصلي؛ Expo Go لا يدعم هذا الربط.",
+                      ],
+                      [
+                        "02",
+                        "اربط الجهاز باللوحة",
+                        "امنح إذن الإشعارات، وأدخل عنوان اللوحة ورمز الربط.",
+                      ],
+                      [
+                        "03",
+                        "أرسل حملة اختبار",
+                        "اختر Android وشريحة test، ثم جرّب الاستقبال والتطبيق مفتوح وفي الخلفية.",
+                      ],
+                    ].map(([number, title, text]) => (
+                      <View style={styles.step} key={number}>
+                        <View style={styles.stepNumber}>
+                          <Text style={styles.stepNumberText}>{number}</Text>
+                        </View>
+                        <View style={styles.stepContent}>
+                          <Text style={styles.stepTitle}>{title}</Text>
+                          <Text style={styles.stepBody}>{text}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
+              {tab === "about" && (
+                <>
+                  <Text style={styles.eyebrow}>مساحة آمنة للتجربة</Text>
+                  <Text accessibilityRole="header" style={styles.title}>
+                    عن التطبيق.
+                  </Text>
+                  <View style={styles.formCard}>
+                    <Text style={styles.sectionTitle}>نسخة الاختبار · 0.1</Text>
+                    <Text style={styles.paragraph}>
+                      هذه واجهة اختبار Android لاستقبال رسائل Firebase Cloud
+                      Messaging المرسلة من لوحة Cash Mobile.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                      عندما يكون التطبيق مفتوحًا: يُحفظ الإشعار في الصندوق ويظهر
+                      إشعار محلي في النظام. في الخلفية: يعرض Android إشعار FCM،
+                      ويؤدي الضغط عليه إلى فتح التطبيق.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                      سجل الصندوق محلي ويحتفظ بآخر 100 رسالة. لا يرسل إحصائيات
+                      الوصول أو الفتح إلى اللوحة، وقد لا يسجل كل رسائل الخلفية
+                      إذا منع Android تنفيذ التطبيق.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                      لا يتم تخزين مفتاح حساب خدمة Firebase أو مفتاح API العام
+                      للوحة في التطبيق. جلسة هذا الجهاز فقط محفوظة في Android
+                      SecureStore.
+                    </Text>
+                    {isWebPreview && (
+                      <Text style={styles.previewNote}>
+                        أنت في معاينة الويب: لا اتصال بـ FCM، ولا ربط أجهزة، ولا
+                        إثبات وصول فعلي.
+                      </Text>
+                    )}
+                  </View>
+                </>
+              )}
             </>
           )}
         </ScrollView>
@@ -706,7 +790,7 @@ export default function App() {
             [
               { key: "inbox", title: "الإشعارات", symbol: "◉" },
               { key: "payments", title: "التجارب", symbol: "▤" },
-              { key: "connect", title: "ربط اللوحة", symbol: "⟷" },
+              { key: "account", title: "الحساب", symbol: "⟷" },
               { key: "about", title: "عن التطبيق", symbol: "i" },
             ] as const
           ).map((item) => (

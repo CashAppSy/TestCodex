@@ -134,6 +134,7 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
       "utf8",
     ),
   );
+  await db.exec(await readFile("migrations/0004_mobile_accounts.sql", "utf8"));
   let cookie = "";
   async function call(path, method = "GET", body, options = {}) {
     const headers = {
@@ -1102,7 +1103,7 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
           .click();
         await page
           .locator("#subscriber-form")
-          .getByLabel("رقم المشترك", { exact: true })
+          .getByLabel("رقم المشترك أو الهاتف", { exact: true })
           .fill("S003");
         await page
           .locator("#subscriber-form")
@@ -1242,6 +1243,339 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
       } finally {
         await browser.close();
       }
+    },
+  );
+
+  await t.test(
+    "mobile accounts authenticate, automatically target devices, isolate histories and revoke sessions",
+    async () => {
+      const phone = "+963944000111",
+        password = "account-test-password";
+      const token = "account_device_" + "a".repeat(30);
+      const anonymous = { headers: { Cookie: "" } };
+      const signup = await call(
+        "/mobile/register",
+        "POST",
+        {
+          phone: "00963 944 000 111",
+          password,
+          name: "ليلى",
+          token,
+          platform: "android",
+        },
+        anonymous,
+      );
+      assert.equal(signup.status, 200, JSON.stringify(signup.body));
+      const user = signup.body.account;
+      assert.equal(user.phone, phone);
+      assert.equal(user.name, "ليلى");
+      const session = (credential) => ({
+        headers: { Authorization: `Bearer ${credential}`, Cookie: "" },
+      });
+      assert.equal(
+        (
+          await call(
+            "/mobile/me",
+            "GET",
+            undefined,
+            session(signup.body.credential),
+          )
+        ).body.id,
+        user.id,
+      );
+      const device = await db
+        .prepare("SELECT subscriber_id FROM devices WHERE id=?")
+        .bind(signup.body.deviceId)
+        .first();
+      assert.equal(device.subscriber_id, user.id);
+      const hash = await db
+        .prepare(
+          "SELECT password_hash FROM mobile_accounts WHERE subscriber_id=?",
+        )
+        .bind(user.id)
+        .first();
+      assert.ok(!hash.password_hash.includes(password));
+      assert.equal(
+        (
+          await call(
+            "/mobile/register",
+            "POST",
+            { phone, password, name: "انتحال", token, platform: "android" },
+            anonymous,
+          )
+        ).status,
+        409,
+      );
+      const wrong = await call(
+        "/mobile/login",
+        "POST",
+        { phone, password: "wrong-password", token, platform: "android" },
+        anonymous,
+      );
+      assert.equal(wrong.status, 401);
+      assert.equal(
+        (
+          await call(
+            "/mobile/me",
+            "GET",
+            undefined,
+            session(signup.body.credential),
+          )
+        ).status,
+        200,
+      );
+      const second = await call(
+        "/mobile/login",
+        "POST",
+        {
+          phone,
+          password,
+          token: "account_second_" + "b".repeat(30),
+          platform: "android",
+        },
+        anonymous,
+      );
+      assert.equal(second.status, 200);
+      assert.equal(second.body.account.id, user.id);
+      assert.notEqual(second.body.deviceId, signup.body.deviceId);
+      const signed = await call("/login", "POST", {
+        email: "admin@example.test",
+        password: "test-password-with-12-characters",
+      });
+      cookie = signed.response.headers.get("set-cookie").split(";")[0];
+      const campaign = await call("/campaigns", "POST", {
+        name: "حملة حساب",
+        title: "حسابي",
+        body: "مشتركون محددون",
+        platform: "android",
+        segment: "test",
+        link: "",
+        scheduled_at: "",
+        audience_mode: "users",
+        subscriberIds: [user.id],
+      });
+      assert.equal(campaign.status, 200);
+      assert.equal(
+        (await call(`/campaigns/${campaign.body.id}/send`, "POST", {})).status,
+        202,
+      );
+      await new Promise((r) => setTimeout(r, 150));
+      const audience = await db
+        .prepare(
+          "SELECT device_id FROM deliveries WHERE campaign_id=? ORDER BY device_id",
+        )
+        .bind(campaign.body.id)
+        .all();
+      assert.deepEqual(
+        audience.results.map((x) => x.device_id),
+        [signup.body.deviceId, second.body.deviceId].sort((a, b) => a - b),
+      );
+      assert.equal(
+        (
+          await call(`/devices/${signup.body.deviceId}/subscriber`, "PUT", {
+            subscriberId: null,
+          })
+        ).status,
+        400,
+      );
+      const pairing = await call("/pairing-code", "POST", {});
+      assert.equal(
+        (
+          await call(
+            "/mobile/pair",
+            "POST",
+            { code: pairing.body.code, token, platform: "android" },
+            anonymous,
+          )
+        ).status,
+        409,
+      );
+      const payment = await call(
+        "/mobile/payments",
+        "POST",
+        { requestId: "account-payment-test", amount: 20000 },
+        session(signup.body.credential),
+      );
+      assert.equal(payment.status, 200);
+      assert.equal(
+        (
+          await call(
+            "/mobile/device",
+            "DELETE",
+            {},
+            session(signup.body.credential),
+          )
+        ).status,
+        200,
+      );
+      assert.equal(
+        (
+          await call(
+            "/mobile/me",
+            "GET",
+            undefined,
+            session(signup.body.credential),
+          )
+        ).status,
+        401,
+      );
+      assert.equal(
+        (
+          await call(
+            "/mobile/me",
+            "GET",
+            undefined,
+            session(second.body.credential),
+          )
+        ).status,
+        200,
+      );
+      // The same physical token used by another account gets a fresh device ID/history.
+      const other = await call(
+        "/mobile/register",
+        "POST",
+        {
+          phone: "+963944000222",
+          password,
+          name: "حساب آخر",
+          token,
+          platform: "android",
+        },
+        anonymous,
+      );
+      assert.equal(other.status, 200, JSON.stringify(other.body));
+      assert.notEqual(other.body.deviceId, signup.body.deviceId);
+      assert.notEqual(other.body.account.id, user.id);
+      assert.deepEqual(
+        (
+          await call(
+            "/mobile/payments",
+            "GET",
+            undefined,
+            session(other.body.credential),
+          )
+        ).body,
+        [],
+      );
+      assert.deepEqual(
+        (
+          await call(
+            `/mobile/payments?id=${payment.body.id}`,
+            "GET",
+            undefined,
+            session(other.body.credential),
+          )
+        ).body,
+        [],
+      );
+      const takeover = await call(
+        "/mobile/login",
+        "POST",
+        { phone, password, token, platform: "android" },
+        anonymous,
+      );
+      assert.equal(takeover.status, 409);
+      assert.equal(
+        (
+          await call(
+            "/mobile/me",
+            "GET",
+            undefined,
+            session(other.body.credential),
+          )
+        ).status,
+        200,
+      );
+      // A new sign-in on one device rotates that device session, not other devices.
+      const relogin = await call(
+        "/mobile/login",
+        "POST",
+        {
+          phone,
+          password,
+          token: "account_second_" + "b".repeat(30),
+          platform: "android",
+        },
+        anonymous,
+      );
+      assert.equal(relogin.status, 200);
+      assert.equal(
+        (
+          await call(
+            "/mobile/me",
+            "GET",
+            undefined,
+            session(second.body.credential),
+          )
+        ).status,
+        401,
+      );
+      assert.equal(
+        (
+          await call(
+            "/mobile/me",
+            "GET",
+            undefined,
+            session(relogin.body.credential),
+          )
+        ).status,
+        200,
+      );
+      const reserved = "+963944000333";
+      await call("/subscribers", "POST", {
+        reference: reserved,
+        name: "مستخدم مستورد",
+      });
+      assert.equal(
+        (
+          await call(
+            "/mobile/register",
+            "POST",
+            {
+              phone: reserved,
+              password,
+              name: "محاولة",
+              token: "another_" + "c".repeat(30),
+              platform: "android",
+            },
+            anonymous,
+          )
+        ).status,
+        409,
+      );
+      const raceBody = {
+        phone: "+963944000444",
+        password,
+        name: "تسجيل متزامن",
+        token: "race_account_" + "r".repeat(30),
+        platform: "android",
+      };
+      const race = await Promise.all([
+        call("/mobile/register", "POST", raceBody, {
+          headers: { "CF-Connecting-IP": "192.0.2.11" },
+        }),
+        call("/mobile/register", "POST", raceBody, {
+          headers: { "CF-Connecting-IP": "192.0.2.12" },
+        }),
+      ]);
+      assert.deepEqual(race.map((x) => x.status).sort(), [200, 409]);
+      const rows = await db
+        .prepare(
+          "SELECT count(*) AS n FROM mobile_accounts a JOIN subscribers s ON s.id=a.subscriber_id WHERE s.reference=?",
+        )
+        .bind(raceBody.phone)
+        .first();
+      assert.equal(rows.n, 1);
+      const limited = { headers: { "CF-Connecting-IP": "192.0.2.100" } };
+      let blocked;
+      for (let i = 0; i < 16; i++)
+        blocked = await call(
+          "/mobile/login",
+          "POST",
+          { phone: "+963944555555", password, token, platform: "android" },
+          limited,
+        );
+      assert.equal(blocked.status, 429);
     },
   );
 });
