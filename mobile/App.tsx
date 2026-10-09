@@ -705,7 +705,7 @@ export default function App() {
           {(
             [
               { key: "inbox", title: "الإشعارات", symbol: "◉" },
-              { key: "payments", title: "الفواتير", symbol: "▤" },
+              { key: "payments", title: "التجارب", symbol: "▤" },
               { key: "connect", title: "ربط اللوحة", symbol: "⟷" },
               { key: "about", title: "عن التطبيق", symbol: "i" },
             ] as const

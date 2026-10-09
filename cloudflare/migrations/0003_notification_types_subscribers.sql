@@ -1,0 +1,11 @@
+CREATE TABLE subscribers (id INTEGER PRIMARY KEY, reference TEXT NOT NULL UNIQUE, name TEXT NOT NULL, created_at TEXT NOT NULL);
+ALTER TABLE devices ADD COLUMN subscriber_id INTEGER REFERENCES subscribers(id);
+CREATE INDEX devices_subscriber ON devices(subscriber_id,active);
+ALTER TABLE campaigns ADD COLUMN audience_mode TEXT NOT NULL DEFAULT 'all' CHECK(audience_mode IN ('all','users'));
+ALTER TABLE campaigns ADD COLUMN subscriber_ids TEXT NOT NULL DEFAULT '[]';
+CREATE TABLE notification_types (key TEXT PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)));
+INSERT INTO notification_types(key,name,title,body) VALUES ('invoice_paid','تسديد فاتورة','تسديد فاتورة تجريبية','تم تسجيل تسديد تجريبي بقيمة {amount} ل.س. لم يُخصم أي مبلغ حقيقي.'), ('invoice_reminder','تذكير بفاتورة','تذكير بفاتورة تجريبية','فاتورة تجريبية بقيمة {amount} ل.س بانتظار التسديد.'), ('balance_topup','شحن رصيد','شحن رصيد تجريبي','تمت محاكاة شحن رصيد بقيمة {amount} ل.س. لم يتغير رصيد حقيقي.'), ('operation_failed','فشل عملية','فشل عملية تجريبية','محاكاة فشل عملية بقيمة {amount} ل.س. لم يُخصم أي مبلغ حقيقي.'); 
+ALTER TABLE demo_payments ADD COLUMN event_type TEXT NOT NULL DEFAULT 'invoice_paid';
+ALTER TABLE demo_payments ADD COLUMN event_name TEXT NOT NULL DEFAULT 'تسديد فاتورة';
+ALTER TABLE demo_payments ADD COLUMN event_title TEXT NOT NULL DEFAULT 'تسديد فاتورة تجريبية';
+ALTER TABLE demo_payments ADD COLUMN event_body TEXT NOT NULL DEFAULT '';

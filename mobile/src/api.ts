@@ -1,5 +1,12 @@
 import { validateCmsUrl } from "./model.ts";
 import type { Connection } from "./storage";
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 async function request(
   url: string,
   path: string,
@@ -20,7 +27,11 @@ async function request(
       signal: controller.signal,
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "تعذر الاتصال باللوحة.");
+    if (!response.ok)
+      throw new ApiError(
+        response.status,
+        result.error || "تعذر الاتصال باللوحة.",
+      );
     return result;
   } finally {
     clearTimeout(timeout);
@@ -33,6 +44,8 @@ export type DemoPayment = {
   paid_at: string;
   notification_status: string;
   error: string | null;
+  event_type: string;
+  event_name: string;
 };
 export async function listPayments(
   connection: Connection,
@@ -51,12 +64,30 @@ export async function payDemo(
   requestId: string,
   amount: number,
   delayed = false,
+  eventType = "invoice_paid",
 ): Promise<DemoPayment> {
   return request(
     connection.url,
     "/api/mobile/payments",
-    { requestId, amount, delayed },
+    { requestId, amount, delayed, eventType },
     connection.credential,
+  );
+}
+export type NotificationType = {
+  key: string;
+  name: string;
+  title: string;
+  body: string;
+};
+export async function listNotificationTypes(
+  connection: Connection,
+): Promise<NotificationType[]> {
+  return request(
+    connection.url,
+    "/api/mobile/notification-types",
+    undefined,
+    connection.credential,
+    "GET",
   );
 }
 export async function pair(

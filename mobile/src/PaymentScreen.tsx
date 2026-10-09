@@ -1,7 +1,14 @@
 import React, { useEffect, useState, useRef } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { listPayments, payDemo, type DemoPayment } from "./api";
+import {
+  listPayments,
+  payDemo,
+  listNotificationTypes,
+  ApiError,
+  type DemoPayment,
+  type NotificationType,
+} from "./api";
 import type { Connection } from "./storage";
 
 const labels: Record<string, string> = {
@@ -25,6 +32,28 @@ export default function PaymentScreen({
   const [amount, setAmount] = useState("20000"),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  const [types, setTypes] = useState<NotificationType[]>([]);
+  const [eventType, setEventType] = useState("invoice_paid");
+  useEffect(() => {
+    if (!connection || preview) return;
+    let active = true;
+    void listNotificationTypes(connection)
+      .then((values) => {
+        if (!active) return;
+        setTypes(values);
+        setEventType((current) =>
+          values.some((value) => value.key === current)
+            ? current
+            : values[0]?.key || "",
+        );
+      })
+      .catch((error) => {
+        if (active) setMessage(error.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [connection, preview]);
   const refresh = async (id?: string) => {
     if (!connection || preview) return;
     const records = await listPayments(connection);
@@ -66,6 +95,7 @@ export default function PaymentScreen({
             requestId: `demo-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             amount: Number(amount),
             delayed,
+            eventType,
           };
       if (
         !Number.isSafeInteger(attempt.amount) ||
@@ -74,19 +104,28 @@ export default function PaymentScreen({
       )
         throw new Error("أدخل مبلغًا صحيحًا بين 1 و10,000,000 ل.س.");
       await AsyncStorage.setItem(key, JSON.stringify(attempt));
-      const payment = await payDemo(
-        connection,
-        attempt.requestId,
-        attempt.amount,
-        attempt.delayed,
-      );
+      let payment: DemoPayment;
+      try {
+        payment = await payDemo(
+          connection,
+          attempt.requestId,
+          attempt.amount,
+          attempt.delayed,
+          attempt.eventType || "invoice_paid",
+        );
+      } catch (error) {
+        // A rejected request was not created; a timeout keeps its stable ID.
+        if (error instanceof ApiError && error.status === 400)
+          await AsyncStorage.removeItem(key);
+        throw error;
+      }
       await AsyncStorage.removeItem(key);
       setDetail(payment);
       await refresh(payment.id);
       setMessage(
         attempt.delayed
-          ? "سُجل التسديد التجريبي. ضع التطبيق في الخلفية؛ يُرسل الإشعار بعد 15 ثانية عند الدورة التالية للعامل، عادةً خلال نحو دقيقة."
-          : "سُجل التسديد التجريبي وبدأ طلب الإشعار إلى هذا الجهاز.",
+          ? "سُجل الحدث التجريبي. ضع التطبيق في الخلفية؛ يُرسل الإشعار بعد 15 ثانية عند الدورة التالية للعامل، عادةً خلال نحو دقيقة."
+          : "سُجل الحدث التجريبي وبدأ طلب الإشعار إلى هذا الجهاز.",
       );
     });
   const button = (label: string, fn: () => void, disabled = busy) => (
@@ -102,10 +141,10 @@ export default function PaymentScreen({
   );
   return (
     <View>
-      <Text style={s.title}>الفواتير التجريبية</Text>
+      <Text style={s.title}>تجارب الإشعارات الآلية</Text>
       <Text style={s.text}>
-        محاكاة تسديد وإشعار خاص لهذا الجهاز. لا يُخصم مال حقيقي، ولا تُربط هذه
-        التجربة بنظام فواتيرك الفعلي.
+        اختر نوع الحدث وجرب إشعاره على هذا الجهاز. لا يُخصم مال حقيقي، ولا تُربط
+        هذه التجربة بنظام فواتيرك الفعلي.
       </Text>
       {preview && (
         <Text style={s.text}>
@@ -118,7 +157,31 @@ export default function PaymentScreen({
         </Text>
       )}
       <View style={s.card}>
-        <Text style={s.text}>مبلغ الفاتورة — ليرة سورية</Text>
+        <Text style={s.heading}>نوع الإشعار</Text>
+        {types.map((type) => (
+          <Pressable
+            key={type.key}
+            accessibilityRole="radio"
+            accessibilityState={{
+              checked: type.key === eventType,
+              disabled: busy,
+            }}
+            disabled={busy}
+            onPress={() => setEventType(type.key)}
+            style={[s.typeOption, type.key === eventType && s.typeSelected]}
+          >
+            <Text style={s.text}>
+              {type.key === eventType ? "◉" : "○"} {type.name}
+            </Text>
+          </Pressable>
+        ))}
+        {!types.length && (
+          <Text style={s.text}>
+            تظهر الأنواع المفعّلة بعد الربط. يمكنك إضافتها أو تعديلها من قسم
+            أنواع الإشعارات في اللوحة.
+          </Text>
+        )}
+        <Text style={s.text}>المبلغ — ليرة سورية</Text>
         <TextInput
           accessibilityLabel="مبلغ الفاتورة التجريبية"
           keyboardType="number-pad"
@@ -128,14 +191,14 @@ export default function PaymentScreen({
           style={s.input}
         />
         {button(
-          "تسديد تجريبي وإشعار فوري",
+          "تجربة الحدث وإشعار فوري",
           () => pay(false),
-          busy || !connection || preview,
+          busy || !connection || preview || !eventType || !types.length,
         )}
         {button(
-          "تسديد وتجربة الإشعار في الخلفية",
+          "تجربة الحدث وإشعار في الخلفية",
           () => pay(true),
-          busy || !connection || preview,
+          busy || !connection || preview || !eventType || !types.length,
         )}
         <Text style={s.text}>
           إذا انقطع الاتصال، أعد الضغط؛ تُستخدم العملية المعلّقة نفسها لمنع
@@ -145,7 +208,9 @@ export default function PaymentScreen({
       {detail && (
         <View style={s.card}>
           <Text style={s.heading}>تفاصيل العملية التجريبية</Text>
-          <Text style={s.text}>الحالة: مسدّدة تجريبيًا</Text>
+          <Text style={s.text}>
+            النوع: {detail.event_name || "تسديد فاتورة"} · حدث تجريبي
+          </Text>
           <Text style={s.text}>
             المبلغ: {detail.amount.toLocaleString("ar")} ل.س
           </Text>
@@ -168,6 +233,8 @@ export default function PaymentScreen({
                   connection,
                   detail.request_id,
                   detail.amount,
+                  false,
+                  detail.event_type || "invoice_paid",
                 );
                 setDetail(same);
                 await refresh(same.id);
@@ -192,7 +259,8 @@ export default function PaymentScreen({
           accessibilityRole="button"
         >
           <Text style={s.heading}>
-            {item.amount.toLocaleString("ar")} ل.س · مسدّدة تجريبيًا
+            {item.event_name || "تسديد فاتورة"} ·{" "}
+            {item.amount.toLocaleString("ar")} ل.س
           </Text>
           <Text style={s.text}>{labels[item.notification_status]}</Text>
           <Text style={s.text}>
@@ -204,6 +272,14 @@ export default function PaymentScreen({
   );
 }
 const s = StyleSheet.create({
+  typeOption: {
+    borderWidth: 1,
+    borderColor: "#dce5d0",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginVertical: 4,
+  },
+  typeSelected: { borderColor: "#365e42", backgroundColor: "#eff5e6" },
   title: {
     fontSize: 27,
     fontWeight: "700",

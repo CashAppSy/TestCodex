@@ -15,6 +15,8 @@ type Campaign = {
   platform: string;
   segment: string;
   status: string;
+  audience_mode: string;
+  subscriber_ids: string;
 };
 let cached: { project: string; token: string; until: number } | undefined;
 const b64 = (value: string | Uint8Array) =>
@@ -82,10 +84,10 @@ export async function claimCampaign(env: Env, id: number) {
   const now = new Date().toISOString();
   const result = await env.DB.batch([
     env.DB.prepare(
-      "UPDATE campaigns SET status='sending',claim_token=?,updated_at=? WHERE id=? AND status IN ('draft','scheduled') AND EXISTS(SELECT 1 FROM devices WHERE active=1 AND (campaigns.platform='all' OR platform=campaigns.platform) AND (campaigns.segment='all' OR segment=campaigns.segment)) RETURNING id",
+      "UPDATE campaigns SET status='sending',claim_token=?,updated_at=? WHERE id=? AND status IN ('draft','scheduled') AND EXISTS(SELECT 1 FROM devices WHERE active=1 AND (campaigns.platform='all' OR platform=campaigns.platform) AND (campaigns.segment='all' OR segment=campaigns.segment) AND (campaigns.audience_mode='all' OR subscriber_id IN (SELECT value FROM json_each(campaigns.subscriber_ids)))) RETURNING id",
     ).bind(claim, now, id),
     env.DB.prepare(
-      "INSERT INTO deliveries(campaign_id,device_id) SELECT c.id,d.id FROM campaigns c JOIN devices d ON d.active=1 AND (c.platform='all' OR d.platform=c.platform) AND (c.segment='all' OR d.segment=c.segment) WHERE c.id=? AND c.claim_token=?",
+      "INSERT INTO deliveries(campaign_id,device_id) SELECT c.id,d.id FROM campaigns c JOIN devices d ON d.active=1 AND (c.platform='all' OR d.platform=c.platform) AND (c.segment='all' OR d.segment=c.segment) AND (c.audience_mode='all' OR d.subscriber_id IN (SELECT value FROM json_each(c.subscriber_ids))) WHERE c.id=? AND c.claim_token=?",
     ).bind(id, claim),
   ]);
   return result[0].results.length > 0;
@@ -119,15 +121,23 @@ export async function processCampaign(env: Env, id: number) {
   await Promise.all(
     claimed.results.map(async (row) => {
       const device = await env.DB.prepare(
-        "SELECT token,active FROM devices WHERE id=?",
+        "SELECT token,active,subscriber_id FROM devices WHERE id=?",
       )
         .bind(row.device_id)
-        .first<{ token: string; active: number }>();
+        .first<{
+          token: string;
+          active: number;
+          subscriber_id: number | null;
+        }>();
       let status = "failed",
         error: string | null = "الجهاز غير نشط.",
         providerId: string | null = null,
         invalid = false;
-      if (device?.active) {
+      if (
+        device?.active &&
+        (campaign.audience_mode === "all" ||
+          JSON.parse(campaign.subscriber_ids).includes(device.subscriber_id))
+      ) {
         try {
           const response = await fetch(
             `https://fcm.googleapis.com/v1/projects/${account.project}/messages:send`,
@@ -248,7 +258,7 @@ export async function tick(env: Env) {
     return;
   }
   const due = await env.DB.prepare(
-    "SELECT id FROM campaigns WHERE status='scheduled' AND scheduled_at<=? AND EXISTS(SELECT 1 FROM devices WHERE active=1 AND (campaigns.platform='all' OR platform=campaigns.platform) AND (campaigns.segment='all' OR segment=campaigns.segment)) ORDER BY scheduled_at LIMIT 1",
+    "SELECT id FROM campaigns WHERE status='scheduled' AND scheduled_at<=? AND EXISTS(SELECT 1 FROM devices WHERE active=1 AND (campaigns.platform='all' OR platform=campaigns.platform) AND (campaigns.segment='all' OR segment=campaigns.segment) AND (campaigns.audience_mode='all' OR subscriber_id IN (SELECT value FROM json_each(campaigns.subscriber_ids)))) ORDER BY scheduled_at LIMIT 1",
   )
     .bind(new Date().toISOString())
     .first<{ id: number }>();
@@ -260,10 +270,16 @@ export async function processPayment(env: Env, id: string) {
   if (env.ENABLE_PAYMENT_DEMO !== "true" || !env.FCM_SERVICE_ACCOUNT_JSON)
     return;
   const payment = await env.DB.prepare(
-    "UPDATE demo_payments SET notification_status='sending',claimed_at=? WHERE id=? AND notification_status='pending' AND notify_after<=? RETURNING device_id,amount",
+    "UPDATE demo_payments SET notification_status='sending',claimed_at=? WHERE id=? AND notification_status='pending' AND notify_after<=? RETURNING device_id,amount,event_type,event_title,event_body",
   )
     .bind(Date.now(), id, Date.now())
-    .first<{ device_id: number; amount: number }>();
+    .first<{
+      device_id: number;
+      amount: number;
+      event_type: string;
+      event_title: string;
+      event_body: string;
+    }>();
   if (!payment) return;
   let status = "failed",
     error: string | null = null;
@@ -289,11 +305,14 @@ export async function processPayment(env: Env, id: string) {
           message: {
             token: device.token,
             notification: {
-              title: "تسديد فاتورة تجريبية",
-              body: `تم تسجيل تسديد تجريبي بقيمة ${payment.amount.toLocaleString("ar")} ل.س. لم يُخصم أي مبلغ حقيقي.`,
+              title: payment.event_title,
+              body:
+                payment.event_body ||
+                `تم تسجيل تسديد تجريبي بقيمة ${payment.amount.toLocaleString("ar")} ل.س. لم يُخصم أي مبلغ حقيقي.`,
             },
             data: {
-              eventType: "payment_demo",
+              eventType: payment.event_type,
+              source: "event_demo",
               paymentId: id,
               url: `nabdh://payment/${id}`,
             },

@@ -3,26 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="theme-color" content="#365e42" />
-    <title>Cash Mobile · إدارة حملات الإشعارات</title>
+    <meta name="theme-color" content="#172234" />
+    <title>Cash Mobile · إدارة الإشعارات</title>
     <link rel="icon" type="image/png" href="/cash-mobile.png" />
-    <link rel="stylesheet" href="/styles.css" />
-    <script src="/app.js?v=payments-1" defer></script>
+    <link rel="stylesheet" href="/styles.css?v=dashboard-2" />
+    <script src="/app.js?v=dashboard-2" defer></script>
   </head>
   <body>
-    <header>
-      <a class="brand" href="/"
-        ><img src="/cash-mobile.png" alt="" width="64" height="64" /><span
-          >Cash Mobile <small>إدارة حملات الإشعارات</small></span
-        ></a
-      >
-      <div id="account" hidden>
-        <span id="user-name"></span
-        ><button id="logout" class="quiet">تسجيل الخروج</button>
-      </div>
-    </header>
     <p id="notice" role="status" hidden></p>
-    <main>
+    <div class="auth-wrap">
       <section id="auth" class="auth" hidden>
         <div class="intro">
           <span class="eyebrow">رسالتك، في اللحظة المناسبة</span>
@@ -70,186 +59,479 @@
           ><button type="submit" id="auth-submit">تسجيل الدخول</button>
         </form>
       </section>
-      <section id="dashboard" hidden>
-        <div class="welcome">
-          <div>
-            <span class="eyebrow">لوحة الحملات</span>
-            <h1>كل رسالة، فرصة جديدة.</h1>
-            <p>إدارة الإشعارات من الفكرة إلى طلب الإرسال.</p>
-          </div>
-          <button id="refresh" class="quiet">تحديث النتائج ↻</button>
-        </div>
-        <div class="stats">
-          <article>
-            <small>الحملات المعروضة</small
-            ><strong id="campaign-count">0</strong>
-          </article>
-          <article>
-            <small>الأجهزة النشطة المعروضة</small
-            ><strong id="device-count">0</strong>
-          </article>
-          <article>
-            <small>طلبات قبلها Firebase</small
-            ><strong id="accepted-count">0</strong>
-          </article>
-        </div>
+    </div>
+    <section id="dashboard" class="app-layout" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="/"
+          ><img src="/cash-mobile.png" alt="" width="64" height="64" /><span
+            >Cash<br />Mobile</span
+          ></a
+        >
+        <p class="sidebar-caption">إدارة المحتوى والإشعارات</p>
         <nav aria-label="أقسام اللوحة">
-          <button data-tab="campaigns" class="selected">الحملات</button
-          ><button data-tab="devices">الأجهزة والربط</button
-          ><button data-tab="settings">الإعدادات</button>
+          <button data-tab="overview" class="selected">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"
+              /></svg
+            ><span>لوحة التحكم</span></button
+          ><button data-tab="campaigns">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 10h4l12-5v14l-12-5H3z M7 14l2 7h4l-2-6" /></svg
+            ><span>الحملات</span></button
+          ><button data-tab="notifications">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5z M10 21h4" /></svg
+            ><span>الإشعارات</span></button
+          ><button data-tab="subscribers">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M16 21v-3a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v3 M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M17 3a4 4 0 0 1 0 8 M22 21v-3a4 4 0 0 0-3-4"
+              /></svg
+            ><span>المشتركون</span></button
+          ><button data-tab="types">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 3h9l4 4v14H6z M14 3v5h5 M9 12h7 M9 16h7" /></svg
+            ><span>أنواع الإشعارات</span></button
+          ><button data-tab="analytics">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 3v18h18 M7 17v-5 M12 17V8 M17 17V4" /></svg
+            ><span>التحليلات</span></button
+          ><button data-tab="devices">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 2h10v20H7z M10 18h4" /></svg
+            ><span>الأجهزة والربط</span></button
+          ><button data-tab="settings">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2"
+              /></svg
+            ><span>الإعدادات</span>
+          </button>
         </nav>
-        <section data-panel="campaigns">
-          <div class="campaign-layout">
-            <form id="campaign-form" class="panel">
-              <div class="row">
-                <h2 id="editor-title">حملة جديدة</h2>
-                <button type="button" id="new-campaign" class="quiet">
-                  مسح النموذج
-                </button>
-              </div>
-              <input name="id" type="hidden" /><label
-                >اسم الحملة<input
-                  name="name"
-                  required
-                  maxlength="100"
-                  placeholder="رسالة الترحيب" /></label
-              ><label
-                >عنوان الإشعار<input
-                  name="title"
-                  required
-                  maxlength="120"
-                  placeholder="شيء جديد ينتظرك ✨" /></label
-              ><label
-                >نص الإشعار<textarea
-                  name="body"
-                  required
-                  maxlength="1000"
-                  rows="3"
-                  placeholder="اكتب رسالة قصيرة وواضحة."
-                ></textarea>
-              </label>
-              <div class="fields">
-                <label
-                  >المنصة<select name="platform">
-                    <option value="android">Android</option>
-                    <option value="ios">iOS</option>
-                    <option value="all">كل المنصات</option>
-                  </select></label
+        <div class="sidebar-foot">
+          <span class="avatar">CM</span
+          ><span>Cash Mobile<small>مركز إدارة الحملات</small></span>
+        </div>
+      </aside>
+      <div class="workspace">
+        <header class="topbar">
+          <div>
+            <strong id="page-title">لوحة التحكم</strong
+            ><small id="breadcrumb">CMS / Dashboard</small>
+          </div>
+          <label class="search-box"
+            ><svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6" /></svg
+            ><input
+              id="global-search"
+              aria-label="البحث في الحملات والمشتركين والقوالب"
+              placeholder="ابحث في الحملات والمشتركين والقوالب…"
+          /></label>
+          <div id="account" hidden>
+            <span class="avatar">AU</span><span id="user-name"></span
+            ><button id="logout" class="quiet">تسجيل الخروج</button>
+          </div>
+        </header>
+        <main>
+          <div class="welcome">
+            <div>
+              <span class="eyebrow">إدارة الحملات والتواصل</span>
+              <h1>لوحة إدارة الإشعارات</h1>
+              <p>أنشئ حملاتك، اختر جمهورك، وتابع إشعارات Cash Mobile.</p>
+            </div>
+            <div class="actions">
+              <button id="refresh" class="quiet">تحديث النتائج ↻</button
+              ><button id="create-campaign">＋ إنشاء حملة</button>
+            </div>
+          </div>
+          <section data-panel="overview">
+            <div class="stats">
+              <article>
+                <span class="stat-icon gold"
+                  ><svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M3 10h4l12-5v14l-12-5H3z M7 14l2 7h4l-2-6"
+                    /></svg></span
+                ><small>إجمالي الحملات</small
+                ><strong id="campaign-count">0</strong
+                ><span class="stat-note">كل الحملات المسجلة</span>
+              </article>
+              <article>
+                <span class="stat-icon blue"
+                  ><svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M16 21v-3a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v3 M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M17 3a4 4 0 0 1 0 8 M22 21v-3a4 4 0 0 0-3-4"
+                    /></svg></span
+                ><small>الأجهزة النشطة</small
+                ><strong id="device-count">0</strong
+                ><span id="subscriber-count" class="stat-note"
+                  >0 مشترك مسجل</span
+                >
+              </article>
+              <article>
+                <span class="stat-icon orange"
+                  ><svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M5 17h14l-2-3V9a5 5 0 0 0-10 0v5z M10 21h4"
+                    /></svg></span
+                ><small>طلبات قبلها Firebase</small
+                ><strong id="accepted-count">0</strong
+                ><span class="stat-note">طلبات الحملات المقبولة</span>
+              </article>
+              <article>
+                <span class="stat-icon green">✓</span
+                ><small>نسبة قبول الطلبات</small
+                ><strong id="success-rate">—</strong
+                ><span class="stat-note"
+                  >من النتائج المنتهية، بما فيها غير المعروفة</span
+                >
+              </article>
+            </div>
+            <div class="overview-grid">
+              <article class="panel">
+                <div class="section-head">
+                  <h2>أحدث الحملات</h2>
+                  <button data-go="campaigns" class="text-button">
+                    عرض الكل ←
+                  </button>
+                </div>
+                <div class="table-scroll">
+                  <table class="campaign-table">
+                    <thead>
+                      <tr>
+                        <th>الحملة</th>
+                        <th>الجمهور</th>
+                        <th>الحالة</th>
+                        <th>الإجراءات</th>
+                      </tr>
+                    </thead>
+                    <tbody id="recent-campaigns"></tbody>
+                  </table>
+                </div>
+              </article>
+              <article class="panel">
+                <div class="section-head">
+                  <h2>أداء الحملات</h2>
+                  <span class="period">آخر 7 أيام</span>
+                </div>
+                <div class="chart-legend">
+                  <span class="legend accepted">طلبات مقبولة</span
+                  ><span class="legend failed">فشل / غير معروف</span>
+                </div>
+                <div id="performance-chart"></div>
+                <small
+                  >بحسب تاريخ إنشاء الحملة بتوقيت UTC. القبول لا يثبت الوصول أو
+                  الفتح.</small
+                >
+              </article>
+            </div>
+            <div class="lower-grid">
+              <article class="panel">
+                <h2>حالات الحملات</h2>
+                <div id="campaign-distribution"></div>
+              </article>
+              <article class="panel">
+                <h2>آخر النشاطات</h2>
+                <div id="recent-activity"></div>
+              </article>
+              <article class="panel">
+                <h2>إجراءات سريعة</h2>
+                <div class="quick-actions">
+                  <button data-go="campaigns">＋ إنشاء وإدارة الحملات</button
+                  ><button data-go="subscribers">
+                    ♧ إدارة المشتركين والجمهور</button
+                  ><button data-go="types">▤ إدارة أنواع الإشعارات</button
+                  ><button data-go="devices">↗ ربط جهاز اختبار</button>
+                </div>
+              </article>
+            </div>
+          </section>
+          <section data-panel="campaigns" hidden>
+            <div class="campaign-layout">
+              <form id="campaign-form" class="panel">
+                <div class="row">
+                  <h2 id="editor-title">حملة جديدة</h2>
+                  <button type="button" id="new-campaign" class="quiet">
+                    مسح النموذج
+                  </button>
+                </div>
+                <input name="id" type="hidden" /><label
+                  >اسم الحملة<input
+                    name="name"
+                    required
+                    maxlength="100"
+                    placeholder="رسالة الترحيب" /></label
                 ><label
-                  >شريحة الجمهور<input
-                    name="segment"
-                    value="test"
+                  >عنوان الإشعار<input
+                    name="title"
+                    required
+                    maxlength="120"
+                    placeholder="شيء جديد ينتظرك ✨" /></label
+                ><label
+                  >نص الإشعار<textarea
+                    name="body"
+                    required
+                    maxlength="1000"
+                    rows="3"
+                    placeholder="اكتب رسالة قصيرة وواضحة."
+                  ></textarea>
+                </label>
+                <div class="fields">
+                  <label
+                    >المنصة<select name="platform">
+                      <option value="android">Android</option>
+                      <option value="ios">iOS</option>
+                      <option value="all">كل المنصات</option>
+                    </select></label
+                  ><label
+                    >شريحة الجمهور<input
+                      name="segment"
+                      value="test"
+                      required
+                      maxlength="64"
+                      pattern="[A-Za-z0-9_-]+"
+                      dir="ltr"
+                    /><small>test للاختبار، أو all لكل الشرائح.</small></label
+                  >
+                </div>
+                <label
+                  >نطاق الجمهور<select name="audience_mode" id="audience-mode" aria-label="نطاق الجمهور">
+                    <option value="all">الجمهور حسب المنصة والشريحة</option>
+                    <option value="users">مشتركون محددون فقط</option>
+                  </select></label
+                >
+                <fieldset id="recipient-picker" hidden>
+                  <legend>اختر المشتركين</legend>
+                  <p>
+                    يتلقى الإشعار كل جهاز نشط مرتبط بالمشترك ومطابق للمنصة
+                    والشريحة.
+                  </p>
+                  <div id="recipient-list"></div>
+                  <small>أضف المشترك واربط جهازه من قسم المشتركين أولًا.</small>
+                </fieldset>
+                <label
+                  >رابط عند فتح الإشعار<input
+                    name="link"
+                    maxlength="2048"
+                    placeholder="nabdh://campaign/welcome"
+                    dir="ltr" /></label
+                ><label
+                  >موعد الإرسال — اختياري<input
+                    name="scheduled_at"
+                    type="datetime-local" /><small id="timezone"></small></label
+                ><button type="submit">حفظ الحملة</button>
+              </form>
+              <aside class="preview">
+                <span class="eyebrow">معاينة الإشعار</span>
+                <div class="phone">
+                  <div class="phone-top">Cash Mobile <span>الآن</span></div>
+                  <h3 id="preview-title">عنوان رسالتك هنا</h3>
+                  <p id="preview-body">كلمات قليلة، تواصل أفضل.</p>
+                </div>
+                <p>
+                  المعاينة لا ترسل إشعارًا. بعد الحفظ اضغط إرسال وراجع جمهور
+                  الحملة قبل التأكيد.
+                </p>
+                <p>
+                  الإرسال يتم على دفعات صغيرة، ويستكمل العامل المجدول العمل كل
+                  دقيقة.
+                </p>
+              </aside>
+            </div>
+            <div class="panel list-panel">
+              <h2>حملاتك</h2>
+              <p>
+                أحدث 100 حملة. القبول لدى Firebase لا يثبت الوصول أو فتح
+                الإشعار. بعد اكتمال الحملة استخدم «إعادة إرسال» لإرسالها مجددًا
+                بعد التأكيد، أو «نسخ للتعديل» لتغيير محتواها أولًا.
+              </p>
+              <div class="table-scroll">
+                <table class="campaign-table">
+                  <thead>
+                    <tr>
+                      <th>الحملة</th>
+                      <th>المنصة</th>
+                      <th>الجمهور</th>
+                      <th>الحالة</th>
+                      <th>الموعد</th>
+                      <th>الإجراءات</th>
+                    </tr>
+                  </thead>
+                  <tbody id="campaign-list"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+          <section data-panel="notifications" hidden>
+            <div class="panel list-panel">
+              <h2>سجل الإشعارات الآلية التجريبية</h2>
+              <p>
+                من تبويب التجارب في تطبيق الاختبار. لا تمثل عملية مالية حقيقية؛
+                لكل عملية إشعار خاص بجهازها.
+              </p>
+              <div id="payment-list"></div>
+            </div>
+            <div class="panel list-panel">
+              <h2>سجل طلبات الإرسال</h2>
+              <p>
+                أحدث 100 نتيجة. الحالة «غير معروف» لا تُعاد تلقائيًا لتجنب إرسال
+                مكرر.
+              </p>
+              <div id="delivery-list"></div>
+            </div>
+          </section>
+          <section data-panel="subscribers" hidden>
+            <div class="two-column">
+              <form id="subscriber-form" class="panel">
+                <h2>إضافة مشترك أو تحديثه</h2>
+                <label
+                  >رقم المشترك<input
+                    name="reference"
+                    required
+                    maxlength="80"
+                    dir="ltr"
+                    placeholder="رقم المشترك في نظامك" /></label
+                ><label
+                  >اسم المشترك<input
+                    name="name"
+                    required
+                    maxlength="100" /></label
+                ><button type="submit">حفظ المشترك</button>
+                <p>
+                  حفظ رقم موجود يحدّث اسمه. اربط أجهزته به من قسم الأجهزة
+                  والربط.
+                </p>
+              </form>
+              <article class="panel">
+                <h2>المشتركون</h2>
+                <p>ابحث برقم المشترك أو اسمه من شريط البحث. أحدث 1000 مشترك.</p>
+                <div id="subscriber-list"></div>
+              </article>
+            </div>
+          </section>
+          <section data-panel="types" hidden>
+            <div class="two-column">
+              <form id="type-form" class="panel">
+                <div class="section-head">
+                  <h2 id="type-editor-title">نوع إشعار جديد</h2>
+                  <button type="button" id="new-type" class="quiet">
+                    نموذج جديد
+                  </button>
+                </div>
+                <label
+                  >رمز النوع<input
+                    name="key"
                     required
                     maxlength="64"
-                    pattern="[A-Za-z0-9_-]+"
+                    pattern="[a-z][a-z0-9_]{1,63}"
                     dir="ltr"
-                  /><small>test للاختبار، أو all لكل الشرائح.</small></label
-                >
-              </div>
-              <label
-                >رابط عند فتح الإشعار<input
-                  name="link"
-                  maxlength="2048"
-                  placeholder="nabdh://campaign/welcome"
-                  dir="ltr" /></label
-              ><label
-                >موعد الإرسال — اختياري<input
-                  name="scheduled_at"
-                  type="datetime-local" /><small id="timezone"></small></label
-              ><button type="submit">حفظ الحملة</button>
-            </form>
-            <aside class="preview">
-              <span class="eyebrow">معاينة الإشعار</span>
-              <div class="phone">
-                <div class="phone-top">Cash Mobile <span>الآن</span></div>
-                <h3 id="preview-title">عنوان رسالتك هنا</h3>
-                <p id="preview-body">كلمات قليلة، تواصل أفضل.</p>
-              </div>
-              <p>
-                المعاينة لا ترسل إشعارًا. بعد الحفظ اضغط إرسال وراجع جمهور
-                الحملة قبل التأكيد.
-              </p>
-              <p>
-                الإرسال يتم على دفعات صغيرة، ويستكمل العامل المجدول العمل كل
-                دقيقة.
-              </p>
-            </aside>
-          </div>
-          <div class="panel list-panel">
-            <h2>حملاتك</h2>
-            <p>
-              أحدث 100 حملة. القبول لدى Firebase لا يثبت الوصول أو فتح الإشعار.
-              بعد اكتمال الحملة استخدم «إعادة إرسال» لإرسالها مجددًا بعد
-              التأكيد، أو «نسخ للتعديل» لتغيير محتواها أولًا.
-            </p>
-            <div id="campaign-list"></div>
-          </div>
-          <div class="panel list-panel">
-            <h2>عمليات تسديد تجريبية</h2>
-            <p>
-              من تبويب الفواتير في تطبيق الاختبار. لا تمثل دفعًا حقيقيًا؛ لكل
-              عملية إشعار خاص بجهازها.
-            </p>
-            <div id="payment-list"></div>
-          </div>
-          <div class="panel list-panel">
-            <h2>سجل طلبات الإرسال</h2>
-            <p>
-              أحدث 100 نتيجة. الحالة «غير معروف» لا تُعاد تلقائيًا لتجنب إرسال
-              مكرر.
-            </p>
-            <div id="delivery-list"></div>
-          </div>
-        </section>
-        <section data-panel="devices" hidden>
-          <div class="panel">
-            <h2>اربط هاتف الاختبار</h2>
-            <p>
-              في تطبيق Android أدخل عنوان اللوحة أدناه، ثم رمز ربط صالح لمدة عشر
-              دقائق ولمرة واحدة.
-            </p>
-            <label>عنوان اللوحة<input id="cms-url" readonly dir="ltr" /></label
-            ><button id="pairing-code">إنشاء رمز ربط</button>
-            <div id="pairing-result" hidden>
-              <label
-                >رمز الربط<input id="pairing-value" readonly dir="ltr" /></label
-              ><small id="pairing-expiry"></small>
+                    placeholder="invoice_paid" /></label
+                ><label
+                  >اسم النوع<input
+                    name="name"
+                    required
+                    maxlength="100" /></label
+                ><label
+                  >عنوان الإشعار<input
+                    name="title"
+                    required
+                    maxlength="120" /></label
+                ><label
+                  >قالب نص الإشعار<textarea
+                    name="body"
+                    required
+                    maxlength="1000"
+                    rows="4"
+                  ></textarea>
+                </label>
+                <p>
+                  متغيرات القالب المتاحة: <code>{amount}</code> للمبلغ و<code
+                    >{operationId}</code
+                  >
+                  لمعرّف العملية. القالب يُحفظ مع كل حدث؛ التعديل ينطبق على
+                  الأحداث الجديدة.
+                </p>
+                <label class="check-label"
+                  ><input type="checkbox" name="active" checked />مفعّل للتجارب
+                  الجديدة</label
+                ><button type="submit">حفظ نوع الإشعار</button>
+              </form>
+              <article class="panel">
+                <h2>أنواع الإشعارات الآلية</h2>
+                <p>
+                  أضف أنواعًا متنوعة وجرّب المفعّل منها في تطبيق Android. هذه
+                  محاكاة؛ التكامل مع أحداث نظام الفواتير الفعلي يأتي لاحقًا.
+                </p>
+                <div id="type-list"></div>
+              </article>
             </div>
-            <p>
-              الجهاز يُسجّل ضمن شريحة test. الربط يتطلب APK حقيقيًا؛ معاينة
-              GitHub Pages لا تستقبل FCM.
-            </p>
-          </div>
-          <div class="panel list-panel">
-            <h2>الأجهزة</h2>
-            <div id="device-list"></div>
-          </div>
-        </section>
-        <section data-panel="settings" hidden>
-          <div class="panel">
-            <h2>إعدادات Firebase</h2>
-            <p id="firebase-status"></p>
-            <p>
-              أضف ملف حساب الخدمة كسرّ اسمه FCM_SERVICE_ACCOUNT_JSON في إعدادات
-              Worker. لا تضفه إلى GitHub أو ملفات الواجهة.
-            </p>
-            <button id="check-firebase">فحص إعداد Firebase دون إرسال</button>
-            <h3>الخطة المجانية</h3>
-            <p>
-              العنوان المجاني workers.dev لا يحتاج دومين. Workers وD1 لهما حدود
-              مجانية؛ راقب الاستهلاك في Cloudflare ولا تفعّل خطة مدفوعة. هذه
-              النسخة مهيأة للاختبار والاستخدام المحدود، وليست خدمة إرسال جماعي
-              كبيرة.
-            </p>
-            <h3>الحملات المجدولة</h3>
-            <p>
-              يتحقق العامل كل دقيقة. تابع قبول الطلبات من سجل الإرسال، ثم تحقق
-              من الاستقبال على هاتفك.
-            </p>
-          </div>
-        </section>
-      </section>
-    </main>
-    <footer>Cash Mobile · رسالة ذات معنى</footer>
+          </section>
+          <section data-panel="analytics" hidden>
+            <article class="panel">
+              <h2>تحليل الحملات المسجلة</h2>
+              <div id="analytics-summary"></div>
+              <div id="analytics-chart"></div>
+              <p>
+                نقيس قبول Firebase وفشل الطلبات ونتائجها غير المعروفة. لا تتوفر
+                قياسات وصول أو فتح على الخادم حاليًا.
+              </p>
+            </article>
+          </section>
+          <section data-panel="devices" hidden>
+            <div class="panel">
+              <h2>اربط هاتف الاختبار</h2>
+              <p>
+                في تطبيق Android أدخل عنوان اللوحة أدناه، ثم رمز ربط صالح لمدة
+                عشر دقائق ولمرة واحدة.
+              </p>
+              <label
+                >عنوان اللوحة<input id="cms-url" readonly dir="ltr" /></label
+              ><button id="pairing-code">إنشاء رمز ربط</button>
+              <div id="pairing-result" hidden>
+                <label
+                  >رمز الربط<input
+                    id="pairing-value"
+                    readonly
+                    dir="ltr" /></label
+                ><small id="pairing-expiry"></small>
+              </div>
+              <p>
+                الجهاز يُسجّل ضمن شريحة test. الربط يتطلب APK حقيقيًا؛ معاينة
+                GitHub Pages لا تستقبل FCM.
+              </p>
+            </div>
+            <div class="panel list-panel">
+              <h2>الأجهزة</h2>
+              <div id="device-list"></div>
+            </div>
+          </section>
+          <section data-panel="settings" hidden>
+            <div class="panel">
+              <h2>إعدادات Firebase</h2>
+              <p id="firebase-status"></p>
+              <p>
+                أضف ملف حساب الخدمة كسرّ اسمه FCM_SERVICE_ACCOUNT_JSON في
+                إعدادات Worker. لا تضفه إلى GitHub أو ملفات الواجهة.
+              </p>
+              <button id="check-firebase">فحص إعداد Firebase دون إرسال</button>
+              <h3>الخطة المجانية</h3>
+              <p>
+                العنوان المجاني workers.dev لا يحتاج دومين. Workers وD1 لهما
+                حدود مجانية؛ راقب الاستهلاك في Cloudflare ولا تفعّل خطة مدفوعة.
+                هذه النسخة مهيأة للاختبار والاستخدام المحدود، وليست خدمة إرسال
+                جماعي كبيرة.
+              </p>
+              <h3>الحملات المجدولة</h3>
+              <p>
+                يتحقق العامل كل دقيقة. تابع قبول الطلبات من سجل الإرسال، ثم تحقق
+                من الاستقبال على هاتفك.
+              </p>
+            </div>
+          </section>
+          <footer>Cash Mobile · إدارة التواصل</footer>
+        </main>
+      </div>
+    </section>
   </body>
 </html>

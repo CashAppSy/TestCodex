@@ -179,6 +179,16 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
       if (!result) throw new HttpError(400, "رمز الجهاز مسجل لجهاز آخر.");
       return json({ ok: true, deviceId: device.id });
     }
+    if (path === "/api/mobile/notification-types" && method === "GET") {
+      await mobileDevice(env, request);
+      return json(
+        (
+          await env.DB.prepare(
+            "SELECT key,name,title,body FROM notification_types WHERE active=1 ORDER BY name",
+          ).all()
+        ).results,
+      );
+    }
     if (path === "/api/mobile/payments" && ["GET", "POST"].includes(method)) {
       const device = await mobileDevice(env, request);
       if (env.ENABLE_PAYMENT_DEMO !== "true")
@@ -197,7 +207,7 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
         return json(
           (
             await env.DB.prepare(
-              "SELECT id,request_id,amount,paid_at,notification_status,error FROM demo_payments WHERE device_id=? AND (?='' OR id=?) ORDER BY paid_at DESC LIMIT 20",
+              "SELECT id,request_id,amount,paid_at,notification_status,error,event_type,event_name FROM demo_payments WHERE device_id=? AND (?='' OR id=?) ORDER BY paid_at DESC LIMIT 20",
             )
               .bind(
                 device.id,
@@ -211,6 +221,9 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
         throw new HttpError(503, "أضف إعداد Firebase أولًا.");
       const b = await readBody(request),
         requestId = text(b, "requestId", 80);
+      const eventType = b.eventType ?? "invoice_paid";
+      if (typeof eventType !== "string")
+        throw new HttpError(400, "نوع الإشعار غير صالح.");
       if (
         !/^[A-Za-z0-9_-]{12,80}$/.test(requestId) ||
         !Number.isSafeInteger(b.amount) ||
@@ -220,25 +233,61 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
       )
         throw new HttpError(400, "تحقق من المبلغ ومعرّف العملية.");
       await budget(env, `payment-demo:${device.id}`, 20, 60000);
+      const existing = await env.DB.prepare(
+        "SELECT id,request_id,amount,paid_at,notification_status,error,event_type,event_name FROM demo_payments WHERE device_id=? AND request_id=?",
+      )
+        .bind(device.id, requestId)
+        .first<{ id: string; amount: number; event_type: string }>();
+      if (existing) {
+        if (existing.amount !== b.amount || existing.event_type !== eventType)
+          throw new HttpError(409, "معرّف العملية مستخدم بمبلغ أو نوع مختلف.");
+        ctx.waitUntil(processPayment(env, existing.id));
+        return json(existing);
+      }
+      const template = await env.DB.prepare(
+        "SELECT name,title,body FROM notification_types WHERE key=? AND active=1",
+      )
+        .bind(eventType)
+        .first<{ name: string; title: string; body: string }>();
+      if (!template)
+        throw new HttpError(400, "نوع الإشعار معطّل أو غير موجود.");
+      const paymentId = random(16);
+      const format = (value: string) =>
+        value
+          .replace(/\{amount\}/g, Number(b.amount).toLocaleString("ar"))
+          .replace(/\{operationId\}/g, paymentId);
+      if (
+        format(template.title).length > 120 ||
+        format(template.body).length > 1000
+      )
+        throw new HttpError(400, "نص القالب بعد تعبئته أطول من الحد المسموح.");
       await env.DB.prepare(
-        "INSERT INTO demo_payments(id,device_id,request_id,amount,paid_at,notify_after) VALUES(?,?,?,?,?,?) ON CONFLICT(device_id,request_id) DO NOTHING",
+        "INSERT INTO demo_payments(id,device_id,request_id,amount,paid_at,notify_after,event_type,event_name,event_title,event_body) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(device_id,request_id) DO NOTHING",
       )
         .bind(
-          random(16),
+          paymentId,
           device.id,
           requestId,
           b.amount,
           new Date().toISOString(),
           Date.now() + (b.delayed ? 15000 : 0),
+          eventType,
+          template.name,
+          format(template.title),
+          format(template.body),
         )
         .run();
       const payment = await env.DB.prepare(
-        "SELECT id,request_id,amount,paid_at,notification_status,error FROM demo_payments WHERE device_id=? AND request_id=?",
+        "SELECT id,request_id,amount,paid_at,notification_status,error,event_type,event_name FROM demo_payments WHERE device_id=? AND request_id=?",
       )
         .bind(device.id, requestId)
-        .first<{ id: string; amount: number }>();
-      if (!payment || payment.amount !== b.amount)
-        throw new HttpError(409, "معرّف العملية مستخدم بمبلغ مختلف.");
+        .first<{ id: string; amount: number; event_type: string }>();
+      if (
+        !payment ||
+        payment.amount !== b.amount ||
+        payment.event_type !== eventType
+      )
+        throw new HttpError(409, "معرّف العملية مستخدم بمبلغ أو نوع مختلف.");
       ctx.waitUntil(processPayment(env, payment.id));
       return json(payment);
     }
@@ -324,6 +373,60 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
     return signIn(env, request);
   }
   const user = await admin(env, request);
+  if (path === "/api/subscribers" && method === "POST") {
+    const b = await readBody(request),
+      reference = text(b, "reference", 80),
+      name = text(b, "name", 100);
+    const row = await env.DB.prepare(
+      "INSERT INTO subscribers(reference,name,created_at) VALUES(?,?,?) ON CONFLICT(reference) DO UPDATE SET name=excluded.name RETURNING id,reference,name",
+    )
+      .bind(reference, name, new Date().toISOString())
+      .first();
+    return json(row);
+  }
+  const assignment = path.match(/^\/api\/devices\/([1-9][0-9]*)\/subscriber$/);
+  if (assignment && method === "PUT") {
+    const b = await readBody(request),
+      id = b.subscriberId;
+    if (
+      id !== null &&
+      (!Number.isSafeInteger(id) ||
+        Number(id) < 1 ||
+        !(await env.DB.prepare("SELECT id FROM subscribers WHERE id=?")
+          .bind(id)
+          .first()))
+    )
+      throw new HttpError(400, "اختر مستخدمًا صالحًا.");
+    const row = await env.DB.prepare(
+      "UPDATE devices SET subscriber_id=? WHERE id=? RETURNING id,subscriber_id",
+    )
+      .bind(id, Number(assignment[1]))
+      .first();
+    if (!row) throw new HttpError(404, "الجهاز غير موجود.");
+    return json(row);
+  }
+  if (path === "/api/notification-types" && method === "POST") {
+    const b = await readBody(request),
+      key = text(b, "key", 64),
+      name = text(b, "name", 100),
+      title = text(b, "title", 120),
+      body = text(b, "body", 1000);
+    if (
+      !/^[a-z][a-z0-9_]{1,63}$/.test(key) ||
+      typeof b.active !== "boolean" ||
+      /\{(?!amount\}|operationId\})[^}]*\}/.test(title + body)
+    )
+      throw new HttpError(
+        400,
+        "استخدم رمزًا إنجليزيًا للنّوع، ومتغيرات {amount} أو {operationId} فقط.",
+      );
+    await env.DB.prepare(
+      "INSERT INTO notification_types(key,name,title,body,active) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET name=excluded.name,title=excluded.title,body=excluded.body,active=excluded.active",
+    )
+      .bind(key, name, title, body, b.active ? 1 : 0)
+      .run();
+    return json({ ok: true });
+  }
   if (path === "/api/firebase/check" && method === "POST") {
     if (!env.FCM_SERVICE_ACCOUNT_JSON)
       throw new HttpError(503, "أضف سر Firebase أولًا.");
@@ -380,20 +483,38 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
   if (path === "/api/admin" && method === "GET") {
     const result = await env.DB.batch([
       env.DB.prepare(
-        "SELECT id,name,title,body,platform,segment,link,status,scheduled_at,created_at,updated_at,completed_at,error,accepted,failed FROM campaigns ORDER BY id DESC LIMIT 100",
+        "SELECT id,name,title,body,platform,segment,link,status,scheduled_at,created_at,updated_at,completed_at,error,accepted,failed,audience_mode,subscriber_ids FROM campaigns ORDER BY id DESC LIMIT 100",
       ),
       env.DB.prepare(
-        "SELECT id,platform,segment,active,created_at FROM devices ORDER BY id DESC LIMIT 100",
+        "SELECT id,platform,segment,active,created_at,subscriber_id FROM devices ORDER BY id DESC LIMIT 100",
       ),
       env.DB.prepare(
         "SELECT campaign_id,device_id,status,error,provider_id FROM deliveries ORDER BY campaign_id DESC,device_id DESC LIMIT 100",
       ),
       env.DB.prepare(
-        "SELECT id,device_id,amount,paid_at,notification_status,error FROM demo_payments ORDER BY paid_at DESC LIMIT 100",
+        "SELECT id,device_id,amount,paid_at,notification_status,error,event_type,event_name FROM demo_payments ORDER BY paid_at DESC LIMIT 100",
       ),
     ]);
+    const subscribers = await env.DB.prepare(
+      "SELECT id,reference,name FROM subscribers ORDER BY id DESC LIMIT 1000",
+    ).all();
+    const types = await env.DB.prepare(
+      "SELECT key,name,title,body,active FROM notification_types ORDER BY name",
+    ).all();
+    const totals = await env.DB.prepare(
+      "SELECT (SELECT COUNT(*) FROM campaigns) AS campaigns,(SELECT COUNT(*) FROM devices WHERE active=1) AS devices,(SELECT COUNT(*) FROM subscribers) AS subscribers,(SELECT COUNT(*) FROM deliveries WHERE status='accepted') AS accepted,(SELECT COUNT(*) FROM deliveries WHERE status IN ('failed','unknown')) AS failed",
+    ).first();
+    const daily = await env.DB.prepare(
+      "SELECT substr(created_at,1,10) AS day,COUNT(*) AS campaigns,SUM(accepted) AS accepted,SUM(failed) AS failed FROM campaigns WHERE created_at>=? GROUP BY substr(created_at,1,10) ORDER BY day",
+    )
+      .bind(new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10))
+      .all();
     return json({
       user,
+      totals,
+      daily: daily.results,
+      subscribers: subscribers.results,
+      notificationTypes: types.results,
       campaigns: result[0].results,
       payments: result[3].results,
       devices: result[1].results,
@@ -414,6 +535,32 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
   }
   if (path === "/api/campaigns" && method === "POST") {
     const b = await readBody(request);
+    const audience = b.audience_mode ?? "all",
+      ids = b.subscriberIds ?? [];
+    if (
+      !["all", "users"].includes(String(audience)) ||
+      !Array.isArray(ids) ||
+      ids.length > 1000 ||
+      ids.some((id) => !Number.isSafeInteger(id) || id < 1) ||
+      new Set(ids).size !== ids.length ||
+      (audience === "users" ? ids.length === 0 : ids.length !== 0)
+    )
+      throw new HttpError(
+        400,
+        "اختر مستخدمًا واحدًا على الأقل للجمهور المحدد، أو اختر الجمهور العام دون مستخدمين محددين.",
+      );
+    const recipients = JSON.stringify(ids);
+    if (
+      ids.length &&
+      (
+        await env.DB.prepare(
+          "SELECT COUNT(*) AS count FROM subscribers WHERE id IN (SELECT value FROM json_each(?))",
+        )
+          .bind(recipients)
+          .first<{ count: number }>()
+      )?.count !== ids.length
+    )
+      throw new HttpError(400, "بعض المستخدمين المحددين غير موجودين.");
     const name = text(b, "name", 100),
       title = text(b, "title", 120),
       body = text(b, "body", 1000),
@@ -454,7 +601,7 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
       if (!Number.isSafeInteger(b.id) || Number(b.id) < 1)
         throw new HttpError(400, "معرّف غير صالح.");
       row = await env.DB.prepare(
-        "UPDATE campaigns SET name=?,title=?,body=?,platform=?,segment=?,link=?,status=?,scheduled_at=?,updated_at=? WHERE id=? AND status IN ('draft','scheduled') RETURNING id",
+        "UPDATE campaigns SET name=?,title=?,body=?,platform=?,segment=?,link=?,status=?,scheduled_at=?,updated_at=?,audience_mode=?,subscriber_ids=? WHERE id=? AND status IN ('draft','scheduled') RETURNING id",
       )
         .bind(
           name,
@@ -466,12 +613,14 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
           status,
           schedule,
           now,
+          audience,
+          recipients,
           b.id,
         )
         .first();
     } else
       row = await env.DB.prepare(
-        "INSERT INTO campaigns(name,title,body,platform,segment,link,status,scheduled_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?) RETURNING id",
+        "INSERT INTO campaigns(name,title,body,platform,segment,link,status,scheduled_at,created_at,updated_at,audience_mode,subscriber_ids) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id",
       )
         .bind(
           name,
@@ -484,6 +633,8 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
           schedule,
           now,
           now,
+          audience,
+          recipients,
         )
         .first();
     if (!row) throw new HttpError(409, "الحملة غير موجودة أو بدأ إرسالها.");
@@ -497,7 +648,7 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
     if (match[2] === "/duplicate" && method === "POST") {
       const now = new Date().toISOString();
       const copy = await env.DB.prepare(
-        "INSERT INTO campaigns(name,title,body,platform,segment,link,status,created_at,updated_at) SELECT substr(name,1,60)||' · إعادة إرسال #'||id,title,body,platform,segment,link,'draft',?,? FROM campaigns WHERE id=? AND status='sent' RETURNING id,name,title,body,platform,segment,link,status,scheduled_at,accepted,failed",
+        "INSERT INTO campaigns(name,title,body,platform,segment,link,status,created_at,updated_at,audience_mode,subscriber_ids) SELECT substr(name,1,60)||' · إعادة إرسال #'||id,title,body,platform,segment,link,'draft',?,?,audience_mode,subscriber_ids FROM campaigns WHERE id=? AND status='sent' RETURNING id,name,title,body,platform,segment,link,status,scheduled_at,accepted,failed,audience_mode,subscriber_ids",
       )
         .bind(now, now, id)
         .first();

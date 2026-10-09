@@ -96,7 +96,7 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
                 return Response.json({ name: "dry-run" });
               }
               sends++;
-              if (body.message.data?.eventType === "payment_demo")
+              if (body.message.data?.source === "event_demo")
                 paymentMessages.push(body.message);
               assert.equal(
                 body.message.android.notification.image,
@@ -128,6 +128,12 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
   const db = await mf.getD1Database("DB");
   await db.exec(await readFile("migrations/0001_initial.sql", "utf8"));
   await db.exec(await readFile("migrations/0002_payment_demo.sql", "utf8"));
+  await db.exec(
+    await readFile(
+      "migrations/0003_notification_types_subscribers.sql",
+      "utf8",
+    ),
+  );
   let cookie = "";
   async function call(path, method = "GET", body, options = {}) {
     const headers = {
@@ -627,6 +633,302 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
     },
   );
   await t.test(
+    "subscriber campaigns target only selected users and preserve that audience on resend",
+    async () => {
+      assert.equal(
+        (
+          await call(
+            "/subscribers",
+            "POST",
+            { reference: "S001", name: "علي" },
+            { headers: { Cookie: "" } },
+          )
+        ).status,
+        401,
+      );
+      const alice = (
+        await call("/subscribers", "POST", { reference: "S001", name: "علي" })
+      ).body;
+      const updated = (
+        await call("/subscribers", "POST", {
+          reference: "S001",
+          name: "علي المحدد",
+        })
+      ).body;
+      assert.equal(alice.id, updated.id);
+      const empty = (
+        await call("/subscribers", "POST", {
+          reference: "S002",
+          name: "دون أجهزة",
+        })
+      ).body;
+      const second = (
+        await db
+          .prepare(
+            "SELECT id FROM devices WHERE token='valid_other_payment_device_token_1234567890'",
+          )
+          .first()
+      ).id;
+      for (const id of [deviceId, second])
+        assert.equal(
+          (
+            await call(`/devices/${id}/subscriber`, "PUT", {
+              subscriberId: alice.id,
+            })
+          ).status,
+          200,
+        );
+      assert.equal(
+        (
+          await call(`/devices/${deviceId}/subscriber`, "PUT", {
+            subscriberId: 999999,
+          })
+        ).status,
+        400,
+      );
+      await db
+        .prepare(
+          "INSERT INTO devices(token,platform,segment,active,created_at,subscriber_id) VALUES(?,'android','test',1,?,NULL)",
+        )
+        .bind(
+          "valid_unselected_fixture_token_1234567890",
+          new Date().toISOString(),
+        )
+        .run();
+      await db
+        .prepare(
+          "INSERT INTO devices(token,platform,segment,active,created_at,subscriber_id) VALUES(?,'ios','test',1,?,?)",
+        )
+        .bind(
+          "valid_selected_ios_fixture_token_1234567890",
+          new Date().toISOString(),
+          alice.id,
+        )
+        .run();
+      const input = {
+        ...draft,
+        name: "حملة محددة",
+        audience_mode: "users",
+        subscriberIds: [alice.id],
+      };
+      assert.equal(
+        (await call("/campaigns", "POST", { ...input, subscriberIds: [] }))
+          .status,
+        400,
+      );
+      assert.equal(
+        (
+          await call("/campaigns", "POST", {
+            ...input,
+            subscriberIds: [999999],
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (await call("/campaigns", "POST", { ...input, audience_mode: "all" }))
+          .status,
+        400,
+      );
+      const id = (await call("/campaigns", "POST", input)).body.id;
+      const claims = await Promise.all([
+        call(`/campaigns/${id}/send`, "POST", {}),
+        call(`/campaigns/${id}/send`, "POST", {}),
+      ]);
+      assert.deepEqual(
+        claims.map((result) => result.status).sort(),
+        [202, 409],
+      );
+      await expect
+        .poll(
+          async () =>
+            (
+              await db
+                .prepare("SELECT status FROM campaigns WHERE id=?")
+                .bind(id)
+                .first()
+            ).status,
+        )
+        .toBe("sent");
+      const deliveries = (
+        await db
+          .prepare(
+            "SELECT device_id FROM deliveries WHERE campaign_id=? ORDER BY device_id",
+          )
+          .bind(id)
+          .all()
+      ).results;
+      assert.deepEqual(
+        deliveries.map((row) => row.device_id),
+        [deviceId, second].sort((a, b) => a - b),
+      );
+      const copy = (await call(`/campaigns/${id}/duplicate`, "POST", {})).body;
+      assert.equal(copy.audience_mode, "users");
+      assert.deepEqual(JSON.parse(copy.subscriber_ids), [alice.id]);
+      assert.equal(
+        (await call(`/campaigns/${copy.id}/send`, "POST", {})).status,
+        202,
+      );
+      await expect
+        .poll(
+          async () =>
+            (
+              await db
+                .prepare("SELECT status FROM campaigns WHERE id=?")
+                .bind(copy.id)
+                .first()
+            ).status,
+        )
+        .toBe("sent");
+      assert.deepEqual(
+        (
+          await db
+            .prepare(
+              "SELECT device_id FROM deliveries WHERE campaign_id=? ORDER BY device_id",
+            )
+            .bind(copy.id)
+            .all()
+        ).results,
+        deliveries,
+      );
+      const nobody = (
+        await call("/campaigns", "POST", {
+          ...input,
+          subscriberIds: [empty.id],
+        })
+      ).body.id;
+      assert.equal(
+        (await call(`/campaigns/${nobody}/send`, "POST", {})).status,
+        409,
+      );
+      assert.equal(
+        (
+          await db
+            .prepare(
+              "SELECT COUNT(*) AS count FROM deliveries WHERE campaign_id=?",
+            )
+            .bind(nobody)
+            .first()
+        ).count,
+        0,
+      );
+    },
+  );
+  await t.test(
+    "notification types are configurable, disabled types reject new events and queued events retain their template",
+    async () => {
+      const headers = { Authorization: "Bearer " + mobileCredential };
+      assert.equal(
+        (await call("/mobile/notification-types", "GET")).status,
+        401,
+      );
+      const template = {
+        key: "custom_event",
+        name: "حدث مخصص",
+        title: "عنوان قبل التعديل",
+        body: "قيمة {amount} ورقم {operationId}",
+        active: true,
+      };
+      assert.equal(
+        (
+          await call("/notification-types", "POST", template, {
+            headers: { Cookie: "" },
+          })
+        ).status,
+        401,
+      );
+      assert.equal(
+        (
+          await call("/notification-types", "POST", {
+            ...template,
+            key: "Bad key",
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await call("/notification-types", "POST", {
+            ...template,
+            body: "{unsupported}",
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (await call("/notification-types", "POST", template)).status,
+        200,
+      );
+      assert.ok(
+        (
+          await call("/mobile/notification-types", "GET", undefined, {
+            headers,
+          })
+        ).body.some((type) => type.key === template.key),
+      );
+      const event = {
+        requestId: "custom-event-snapshot-123",
+        amount: 700,
+        delayed: true,
+        eventType: template.key,
+      };
+      const result = await call("/mobile/payments", "POST", event, { headers });
+      assert.equal(result.status, 200);
+      const before = paymentMessages.length;
+      await call("/notification-types", "POST", {
+        ...template,
+        title: "عنوان جديد",
+        active: false,
+      });
+      assert.ok(
+        !(
+          await call("/mobile/notification-types", "GET", undefined, {
+            headers,
+          })
+        ).body.some((type) => type.key === template.key),
+      );
+      assert.equal(
+        (
+          await call(
+            "/mobile/payments",
+            "POST",
+            { ...event, requestId: "custom-disabled-event-123" },
+            { headers },
+          )
+        ).status,
+        400,
+      );
+      assert.equal(
+        (await call("/mobile/payments", "POST", event, { headers })).body.id,
+        result.body.id,
+      );
+      assert.equal(
+        (
+          await call(
+            "/mobile/payments",
+            "POST",
+            { ...event, eventType: "invoice_paid" },
+            { headers },
+          )
+        ).status,
+        409,
+      );
+      await db
+        .prepare("UPDATE demo_payments SET notify_after=0 WHERE id=?")
+        .bind(result.body.id)
+        .run();
+      await (
+        await mf.getWorker("cms")
+      ).scheduled({ cron: "* * * * *", scheduledTime: Date.now() });
+      assert.equal(paymentMessages.length, before + 1);
+      assert.equal(paymentMessages.at(-1).notification.title, template.title);
+      assert.ok(
+        paymentMessages.at(-1).notification.body.includes(result.body.id),
+      );
+      assert.equal(paymentMessages.at(-1).data.eventType, template.key);
+    },
+  );
+  await t.test(
     "oversized requests are rejected; admin can revoke device and logout revokes cookie",
     async () => {
       assert.equal(
@@ -685,12 +987,8 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
         const errors = [];
         page.on("pageerror", (error) => errors.push(error.message));
         await page.goto((await mf.ready).toString());
-        await expect(page.locator(".brand img")).toBeVisible();
-        await expect
-          .poll(() =>
-            page.locator(".brand img").evaluate((image) => image.naturalWidth),
-          )
-          .toBeGreaterThan(0);
+        await expect(page.locator("#auth")).toBeVisible();
+
         await page.getByLabel("البريد الإلكتروني").fill("admin@example.test");
         await page
           .getByLabel("كلمة المرور")
@@ -699,8 +997,22 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
           .getByRole("button", { name: "تسجيل الدخول", exact: true })
           .click();
         await expect(
-          page.getByRole("heading", { name: "كل رسالة، فرصة جديدة." }),
+          page.getByRole("heading", { name: "لوحة إدارة الإشعارات" }),
         ).toBeVisible();
+        await expect(page.locator(".brand img")).toBeVisible();
+        await page.setViewportSize({ width: 1440, height: 1000 });
+        await page.screenshot({
+          path: "/tmp/cash-mobile-dashboard-desktop.png",
+          fullPage: true,
+        });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.screenshot({
+          path: "/tmp/cash-mobile-dashboard-mobile.png",
+          fullPage: true,
+        });
+        await page
+          .getByRole("button", { name: "الحملات", exact: true })
+          .click();
         const resendRow = page
           .locator("#campaign-list .list-row")
           .filter({ hasText: "batch-test" })
@@ -765,8 +1077,14 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
         ).toHaveValue(/^[1-9][0-9]*$/);
         assert.equal(sends, beforeResendDraft);
         await page.getByLabel("اسم الحملة").fill("حملة من المتصفح");
-        await page.getByLabel("عنوان الإشعار").fill("اختبار الواجهة");
-        await page.getByLabel("نص الإشعار").fill("رسالة آمنة من الاختبار");
+        await page
+          .locator("#campaign-form")
+          .getByLabel("عنوان الإشعار", { exact: true })
+          .fill("اختبار الواجهة");
+        await page
+          .locator("#campaign-form")
+          .getByLabel("نص الإشعار", { exact: true })
+          .fill("رسالة آمنة من الاختبار");
         await expect(page.locator("#preview-title")).toHaveText(
           "اختبار الواجهة",
         );
@@ -775,11 +1093,118 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
           .click();
         await expect(page.locator("#notice")).toHaveText("تم حفظ الحملة.");
         await expect(
-          page.getByText("حملة من المتصفح", { exact: true }),
+          page
+            .locator("#campaign-list")
+            .getByText("حملة من المتصفح", { exact: true }),
         ).toBeVisible();
+        await page
+          .getByRole("button", { name: "المشتركون", exact: true })
+          .click();
+        await page
+          .locator("#subscriber-form")
+          .getByLabel("رقم المشترك", { exact: true })
+          .fill("S003");
+        await page
+          .locator("#subscriber-form")
+          .getByLabel("اسم المشترك", { exact: true })
+          .fill("مشترك المتصفح");
+        await page
+          .getByRole("button", { name: "حفظ المشترك", exact: true })
+          .click();
+        await expect(page.locator("#subscriber-list")).toContainText(
+          "مشترك المتصفح",
+        );
+        const browserUser = await db
+          .prepare("SELECT id FROM subscribers WHERE reference='S003'")
+          .first();
+        await page
+          .getByRole("button", { name: "أنواع الإشعارات", exact: true })
+          .click();
+        const typeForm = page.locator("#type-form");
+        await typeForm
+          .getByLabel("رمز النوع", { exact: true })
+          .fill("browser_event");
+        await typeForm
+          .getByLabel("اسم النوع", { exact: true })
+          .fill("إشعار من المتصفح");
+        await typeForm
+          .getByLabel("عنوان الإشعار", { exact: true })
+          .fill("تجربة قالب جديد");
+        await typeForm
+          .getByLabel("قالب نص الإشعار", { exact: true })
+          .fill("المبلغ {amount} ل.س");
+        await page
+          .getByRole("button", { name: "حفظ نوع الإشعار", exact: true })
+          .click();
+        await expect(page.locator("#type-list")).toContainText(
+          "إشعار من المتصفح",
+        );
+        await page
+          .getByRole("button", { name: "الحملات", exact: true })
+          .click();
+        await page
+          .getByRole("button", { name: "مسح النموذج", exact: true })
+          .click();
+        const campaignForm = page.locator("#campaign-form");
+        await campaignForm
+          .getByLabel("اسم الحملة", { exact: true })
+          .fill("حملة لمشترك معين");
+        await campaignForm
+          .getByLabel("عنوان الإشعار", { exact: true })
+          .fill("إشعار خاص");
+        await campaignForm
+          .getByLabel("نص الإشعار", { exact: true })
+          .fill("للمشترك المختار فقط");
+        await campaignForm
+          .getByLabel("نطاق الجمهور", { exact: true })
+          .selectOption("users");
+        await campaignForm
+          .getByRole("checkbox", { name: /مشترك المتصفح/ })
+          .check();
+        await page
+          .getByRole("button", { name: "حفظ الحملة", exact: true })
+          .click();
+        await expect(page.locator("#campaign-list")).toContainText(
+          "حملة لمشترك معين",
+        );
+        const saved = await db
+          .prepare(
+            "SELECT audience_mode,subscriber_ids FROM campaigns WHERE name='حملة لمشترك معين'",
+          )
+          .first();
+        assert.equal(saved.audience_mode, "users");
+        assert.deepEqual(JSON.parse(saved.subscriber_ids), [browserUser.id]);
+        await page.locator("#global-search").fill("حملة لمشترك معين");
+        await expect(page.locator("#campaign-list .list-row")).toHaveCount(1);
+        await page.locator("#global-search").fill("");
         await page
           .getByRole("button", { name: "الأجهزة والربط", exact: true })
           .click();
+        const deviceForUser = await db
+          .prepare(
+            "SELECT id FROM devices WHERE token='valid_other_payment_device_token_1234567890'",
+          )
+          .first();
+        const assignSelect = page.getByLabel(
+          `مشترك الجهاز #${deviceForUser.id}`,
+          { exact: true },
+        );
+        await assignSelect.selectOption(String(browserUser.id));
+        await assignSelect
+          .locator("..")
+          .getByRole("button", { name: "حفظ ربط المشترك", exact: true })
+          .click();
+        await expect
+          .poll(
+            async () =>
+              (
+                await db
+                  .prepare("SELECT subscriber_id FROM devices WHERE id=?")
+                  .bind(deviceForUser.id)
+                  .first()
+              ).subscriber_id,
+          )
+          .toBe(browserUser.id);
         await page
           .getByRole("button", { name: "إنشاء رمز ربط", exact: true })
           .click();

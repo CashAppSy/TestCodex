@@ -6,6 +6,7 @@ import {
   disconnectDevice,
   listPayments,
   payDemo,
+  listNotificationTypes,
 } from "../src/api.ts";
 test("client pairs without a server API key and subsequent requests use only its device credential", async () => {
   const original = globalThis.fetch;
@@ -72,6 +73,17 @@ test("payment requests use scoped credentials and a stable idempotency ID; reads
       "https://cms.example.com/api/mobile/payments?id=owned-payment",
     );
     assert.equal(calls[1].init?.body, calls[2].init?.body);
+    await payDemo(connection, "topup-event-id", 5000, false, "balance_topup");
+    await listNotificationTypes(connection);
+    assert.equal(
+      JSON.parse(String(calls[3].init?.body)).eventType,
+      "balance_topup",
+    );
+    assert.equal(
+      calls[4].url,
+      "https://cms.example.com/api/mobile/notification-types",
+    );
+    assert.equal(calls[4].init?.body, undefined);
     assert.equal(
       JSON.parse(String(calls[1].init?.body)).requestId,
       "stable-payment-id",
