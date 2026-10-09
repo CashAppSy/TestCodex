@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { generateKeyPairSync, verify } from "node:crypto";
+import { generateKeyPairSync, verify, createHash } from "node:crypto";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { chromium, expect } from "@playwright/test";
 
@@ -15,6 +15,7 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
   let sends = 0,
     dryRuns = 0,
     oauthCalls = 0;
+  const paymentMessages = [];
   const bootstrap = "test-only-bootstrap-token-not-a-real-secret";
   const mf = new Miniflare(
     convertV4MiniflareOptions({
@@ -26,6 +27,7 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
           compatibilityDate: "2026-10-08",
           bindings: {
             BOOTSTRAP_TOKEN: bootstrap,
+            ENABLE_PAYMENT_DEMO: "true",
             NOTIFICATION_LOGO_URL: "https://logo.example.test/cash-mobile.png",
             FCM_SERVICE_ACCOUNT_JSON: JSON.stringify(account),
           },
@@ -94,6 +96,8 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
                 return Response.json({ name: "dry-run" });
               }
               sends++;
+              if (body.message.data?.eventType === "payment_demo")
+                paymentMessages.push(body.message);
               assert.equal(
                 body.message.android.notification.image,
                 "https://logo.example.test/cash-mobile.png",
@@ -123,6 +127,7 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
   t.after(() => mf.dispose());
   const db = await mf.getD1Database("DB");
   await db.exec(await readFile("migrations/0001_initial.sql", "utf8"));
+  await db.exec(await readFile("migrations/0002_payment_demo.sql", "utf8"));
   let cookie = "";
   async function call(path, method = "GET", body, options = {}) {
     const headers = {
@@ -466,6 +471,159 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
       );
       await worker.scheduled({ cron: "* * * * *", scheduledTime: Date.now() });
       assert.equal(sends - before, 7);
+    },
+  );
+  await t.test(
+    "payment demo is device-scoped, idempotent under concurrency and sends immediate or delayed notifications once",
+    async () => {
+      const headers = { Authorization: "Bearer " + mobileCredential };
+      assert.equal(
+        (
+          await call("/mobile/payments", "POST", {
+            requestId: "demo-payment-no-auth",
+            amount: 20000,
+          })
+        ).status,
+        401,
+      );
+      const request = {
+        requestId: "demo-payment-concurrent",
+        amount: 20000,
+        deviceId: 99999,
+      };
+      const before = paymentMessages.length;
+      const results = await Promise.all([
+        call("/mobile/payments", "POST", request, { headers }),
+        call("/mobile/payments", "POST", request, { headers }),
+      ]);
+      assert.deepEqual(
+        results.map((r) => r.status),
+        [200, 200],
+      );
+      assert.equal(results[0].body.id, results[1].body.id);
+      await expect
+        .poll(
+          async () =>
+            (
+              await db
+                .prepare(
+                  "SELECT notification_status FROM demo_payments WHERE id=?",
+                )
+                .bind(results[0].body.id)
+                .first()
+            ).notification_status,
+        )
+        .toBe("accepted");
+      assert.equal(paymentMessages.length, before + 1);
+      assert.equal(
+        paymentMessages.at(-1).token,
+        (
+          await db
+            .prepare("SELECT token FROM devices WHERE id=?")
+            .bind(deviceId)
+            .first()
+        ).token,
+      );
+      assert.equal(
+        paymentMessages.at(-1).data.url,
+        `nabdh://payment/${results[0].body.id}`,
+      );
+      assert.equal(
+        (await call("/mobile/payments", "POST", request, { headers })).body.id,
+        results[0].body.id,
+      );
+      assert.equal(paymentMessages.length, before + 1);
+      assert.equal(
+        (
+          await call(
+            "/mobile/payments",
+            "POST",
+            { ...request, amount: 30000 },
+            { headers },
+          )
+        ).status,
+        409,
+      );
+      const other = "b".repeat(64);
+      const otherId = (
+        await db
+          .prepare(
+            "INSERT INTO devices(token,platform,segment,active,created_at) VALUES(?,'android','test',1,?) RETURNING id",
+          )
+          .bind(
+            "valid_other_payment_device_token_1234567890",
+            new Date().toISOString(),
+          )
+          .first()
+      ).id;
+      await db
+        .prepare(
+          "INSERT INTO mobile_sessions(credential_hash,device_id,expires_at) VALUES(?,?,?)",
+        )
+        .bind(
+          createHash("sha256").update(other).digest("hex"),
+          otherId,
+          Date.now() + 600000,
+        )
+        .run();
+      // Another valid device cannot read this payment, regardless of its ID.
+      assert.deepEqual(
+        (
+          await call(
+            `/mobile/payments?id=${results[0].body.id}`,
+            "GET",
+            undefined,
+            { headers: { Authorization: "Bearer " + other } },
+          )
+        ).body,
+        [],
+      );
+      const delayed = {
+        requestId: "demo-payment-delayed",
+        amount: 5000,
+        delayed: true,
+      };
+      const row = (await call("/mobile/payments", "POST", delayed, { headers }))
+        .body;
+      assert.equal(row.notification_status, "pending");
+      const due = (
+        await db
+          .prepare("SELECT notify_after FROM demo_payments WHERE id=?")
+          .bind(row.id)
+          .first()
+      ).notify_after;
+      await call(
+        "/mobile/payments",
+        "POST",
+        { ...delayed, delayed: false },
+        { headers },
+      );
+      assert.equal(
+        (
+          await db
+            .prepare("SELECT notify_after FROM demo_payments WHERE id=?")
+            .bind(row.id)
+            .first()
+        ).notify_after,
+        due,
+      );
+      assert.equal(paymentMessages.length, before + 1);
+      await db
+        .prepare("UPDATE demo_payments SET notify_after=0 WHERE id=?")
+        .bind(row.id)
+        .run();
+      await (
+        await mf.getWorker("cms")
+      ).scheduled({ cron: "* * * * *", scheduledTime: Date.now() });
+      assert.equal(paymentMessages.length, before + 2);
+      assert.equal(
+        (
+          await call(`/mobile/payments?id=${row.id}`, "GET", undefined, {
+            headers,
+          })
+        ).body[0].notification_status,
+        "accepted",
+      );
     },
   );
   await t.test(

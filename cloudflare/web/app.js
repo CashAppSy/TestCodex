@@ -112,7 +112,12 @@ function render() {
   $("firebase-status").textContent = state.firebaseConfigured
     ? "سر Firebase مضاف. استخدم الفحص للتحقق من المصادقة وصلاحية API دون إرسال."
     : "سر Firebase لم يُضف بعد؛ لن تعمل الإشعارات قبل إضافته.";
-  for (const name of ["campaign-list", "device-list", "delivery-list"])
+  for (const name of [
+    "campaign-list",
+    "device-list",
+    "delivery-list",
+    "payment-list",
+  ])
     $(name).replaceChildren();
   if (!state.campaigns.length)
     $("campaign-list").append(element("p", "ابدأ بحملة موجهة إلى شريحة test."));
@@ -230,6 +235,19 @@ function render() {
       d.error || d.provider_id || "بانتظار نتيجة الطلب",
       d.status,
     );
+  if (!state.payments?.length)
+    $("payment-list").append(
+      element("p", "لم تُنفذ عمليات تسديد تجريبية بعد."),
+    );
+  for (const payment of state.payments || [])
+    row(
+      $("payment-list"),
+      `تسديد تجريبي · ${payment.amount.toLocaleString("ar")} ل.س`,
+      `الجهاز #${payment.device_id} · ${when(payment.paid_at)} · ${payment.error || payment.id}`,
+      payment.notification_status === "sending"
+        ? "inflight"
+        : payment.notification_status,
+    );
 }
 async function refresh() {
   state = await api("/admin");
@@ -241,7 +259,10 @@ setInterval(async () => {
     document.hidden ||
     $("dashboard").hidden ||
     autoRefreshing ||
-    !state.campaigns.some((campaign) => campaign.status === "sending")
+    (!state.campaigns.some((campaign) => campaign.status === "sending") &&
+      !state.payments?.some((payment) =>
+        ["pending", "sending"].includes(payment.notification_status),
+      ))
   )
     return;
   autoRefreshing = true;

@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pair, refreshDevice, disconnectDevice } from "../src/api.ts";
+import {
+  pair,
+  refreshDevice,
+  disconnectDevice,
+  listPayments,
+  payDemo,
+} from "../src/api.ts";
 test("client pairs without a server API key and subsequent requests use only its device credential", async () => {
   const original = globalThis.fetch;
   const credential = "a".repeat(64);
@@ -40,6 +46,43 @@ test("client pairs without a server API key and subsequent requests use only its
     assert.equal(requests[2].auth, `Bearer ${credential}`);
   } finally {
     globalThis.fetch = original;
+  }
+});
+test("payment requests use scoped credentials and a stable idempotency ID; reads have no request body", async () => {
+  const old = globalThis.fetch;
+  const connection = {
+    url: "https://cms.example.com",
+    credential: "a".repeat(64),
+    deviceId: 7,
+  };
+  const calls: { url: string; init?: RequestInit }[] = [];
+  try {
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), init });
+      return Response.json(
+        init?.method === "GET" ? [] : { id: "payment-demo" },
+      );
+    };
+    await listPayments(connection, "owned-payment");
+    await payDemo(connection, "stable-payment-id", 20000, true);
+    await payDemo(connection, "stable-payment-id", 20000, true);
+    assert.equal(calls[0].init?.body, undefined);
+    assert.equal(
+      calls[0].url,
+      "https://cms.example.com/api/mobile/payments?id=owned-payment",
+    );
+    assert.equal(calls[1].init?.body, calls[2].init?.body);
+    assert.equal(
+      JSON.parse(String(calls[1].init?.body)).requestId,
+      "stable-payment-id",
+    );
+    for (const call of calls)
+      assert.equal(
+        (call.init?.headers as Record<string, string>).Authorization,
+        "Bearer " + connection.credential,
+      );
+  } finally {
+    globalThis.fetch = old;
   }
 });
 test("client rejects malformed pairing responses and surfaces server rejection", async () => {

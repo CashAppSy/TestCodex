@@ -8,14 +8,14 @@ export default (): ExpoConfig => {
   return {
     name: "Cash Mobile",
     slug: "nabdh-test-app",
-    version: "0.1.6",
+    version: "0.1.7",
     icon: "./assets/cash-mobile.png",
     orientation: "portrait",
     userInterfaceStyle: "light",
     scheme: "nabdh",
     android: {
       package: packageName,
-      versionCode: 7,
+      versionCode: 8,
       permissions: ["POST_NOTIFICATIONS"],
       ...(fs.existsSync(path.resolve(process.cwd(), googleServices))
         ? { googleServicesFile: googleServices }

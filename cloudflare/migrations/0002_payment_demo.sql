@@ -1,0 +1,2 @@
+CREATE TABLE demo_payments (id TEXT PRIMARY KEY, device_id INTEGER NOT NULL REFERENCES devices(id), request_id TEXT NOT NULL, amount INTEGER NOT NULL, paid_at TEXT NOT NULL, notify_after INTEGER NOT NULL, notification_status TEXT NOT NULL DEFAULT 'pending' CHECK(notification_status IN ('pending','sending','accepted','failed','unknown')), claimed_at INTEGER, error TEXT, UNIQUE(device_id,request_id));
+CREATE INDEX demo_payments_due ON demo_payments(notification_status,notify_after);

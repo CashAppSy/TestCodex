@@ -37,8 +37,9 @@ import {
   type Connection,
 } from "./src/storage";
 import { pair, refreshDevice, disconnectDevice } from "./src/api";
+import PaymentScreen from "./src/PaymentScreen";
 
-type Tab = "inbox" | "connect" | "about";
+type Tab = "inbox" | "connect" | "about" | "payments";
 function Button({
   title,
   onPress,
@@ -82,10 +83,15 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [selected, setSelected] = useState<Incoming | null>(null);
   const [campaignPage, setCampaignPage] = useState<string | null>(null);
+  const [paymentId, setPaymentId] = useState<string | null>(null);
   const handleOpened = (incoming: Incoming) => {
     setTab("inbox");
     setSelected(incoming);
     const destination = notificationDestination(incoming.url);
+    if (destination?.type === "payment") {
+      setPaymentId(destination.id);
+      setTab("payments");
+    }
     setCampaignPage(destination?.type === "campaign" ? destination.id : null);
   };
   useEffect(() => {
@@ -138,6 +144,10 @@ export default function App() {
       if (destination?.type === "campaign") {
         setCampaignPage(destination.id);
         setTab("inbox");
+      }
+      if (destination?.type === "payment") {
+        setPaymentId(destination.id);
+        setTab("payments");
       }
     };
     const links = Linking.addEventListener("url", (event) =>
@@ -247,7 +257,11 @@ export default function App() {
           "الرابط غير مدعوم. استخدم nabdh://campaign/id أو رابط HTTPS.",
         );
       if (destination.type === "campaign") setCampaignPage(destination.id);
-      else await Linking.openURL(destination.url);
+      else if (destination.type === "payment") {
+        setPaymentId(destination.id);
+        setTab("payments");
+      } else if (destination.type === "https")
+        await Linking.openURL(destination.url);
     });
   const clear = () => {
     if (Platform.OS === "web") {
@@ -520,6 +534,13 @@ export default function App() {
               </View>
             </>
           ) : null}
+          {tab === "payments" && (
+            <PaymentScreen
+              connection={connection}
+              selectedId={paymentId}
+              preview={isWebPreview}
+            />
+          )}
           {tab === "connect" && (
             <>
               <Text style={styles.eyebrow}>من لوحتك إلى جهازك</Text>
@@ -684,6 +705,7 @@ export default function App() {
           {(
             [
               { key: "inbox", title: "الإشعارات", symbol: "◉" },
+              { key: "payments", title: "الفواتير", symbol: "▤" },
               { key: "connect", title: "ربط اللوحة", symbol: "⟷" },
               { key: "about", title: "عن التطبيق", symbol: "i" },
             ] as const
@@ -697,6 +719,7 @@ export default function App() {
                 setTab(item.key);
                 setSelected(null);
                 setCampaignPage(null);
+                setPaymentId(null);
                 setError("");
                 setNotice("");
               }}

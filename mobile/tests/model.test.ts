@@ -1,5 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+test("payment notifications open their transaction page inside the app", () => {
+  assert.deepEqual(
+    notificationDestination("nabdh://payment/" + "ab".repeat(16)),
+    { type: "payment", id: "ab".repeat(16) },
+  );
+  assert.equal(notificationDestination("nabdh://payment/../admin"), null);
+});
 import {
   mergeInbox,
   normalizeNotification,

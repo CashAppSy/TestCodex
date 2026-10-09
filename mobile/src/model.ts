@@ -79,15 +79,24 @@ export function validateCmsUrl(
 }
 export function notificationDestination(
   value: string,
-): { type: "campaign"; id: string } | { type: "https"; url: string } | null {
+):
+  | { type: "campaign" | "payment"; id: string }
+  | { type: "https"; url: string }
+  | null {
   try {
     const url = new URL(value);
     if (
       url.protocol === "nabdh:" &&
-      url.hostname === "campaign" &&
-      /^\/[a-zA-Z0-9_-]+$/.test(url.pathname)
+      ["campaign", "payment"].includes(url.hostname) &&
+      (url.hostname === "payment"
+        ? /^\/[a-f0-9]{32}$/
+        : /^\/[a-zA-Z0-9_-]+$/
+      ).test(url.pathname)
     )
-      return { type: "campaign", id: url.pathname.slice(1) };
+      return {
+        type: url.hostname as "campaign" | "payment",
+        id: url.pathname.slice(1),
+      };
     if (url.protocol === "https:" && !url.username && !url.password)
       return { type: "https", url: url.href };
   } catch {}

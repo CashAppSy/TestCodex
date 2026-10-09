@@ -8,7 +8,14 @@ import {
   text,
   validToken,
 } from "./security";
-import { claimCampaign, oauth, processCampaign, tick, type Env } from "./push";
+import {
+  claimCampaign,
+  oauth,
+  processCampaign,
+  processPayment,
+  tick,
+  type Env,
+} from "./push";
 const cookieName = "nabdh_session";
 const json = (
   body: unknown,
@@ -172,6 +179,69 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
       if (!result) throw new HttpError(400, "رمز الجهاز مسجل لجهاز آخر.");
       return json({ ok: true, deviceId: device.id });
     }
+    if (path === "/api/mobile/payments" && ["GET", "POST"].includes(method)) {
+      const device = await mobileDevice(env, request);
+      if (env.ENABLE_PAYMENT_DEMO !== "true")
+        throw new HttpError(403, "تجربة الفواتير غير مفعّلة على الخادم.");
+      const active = await env.DB.prepare(
+        "SELECT id FROM devices WHERE id=? AND active=1 AND segment='test'",
+      )
+        .bind(device.id)
+        .first();
+      if (!active)
+        throw new HttpError(
+          403,
+          "هذه التجربة للأجهزة النشطة ضمن شريحة test فقط.",
+        );
+      if (method === "GET")
+        return json(
+          (
+            await env.DB.prepare(
+              "SELECT id,request_id,amount,paid_at,notification_status,error FROM demo_payments WHERE device_id=? AND (?='' OR id=?) ORDER BY paid_at DESC LIMIT 20",
+            )
+              .bind(
+                device.id,
+                url.searchParams.get("id") || "",
+                url.searchParams.get("id") || "",
+              )
+              .all()
+          ).results,
+        );
+      if (!env.FCM_SERVICE_ACCOUNT_JSON)
+        throw new HttpError(503, "أضف إعداد Firebase أولًا.");
+      const b = await readBody(request),
+        requestId = text(b, "requestId", 80);
+      if (
+        !/^[A-Za-z0-9_-]{12,80}$/.test(requestId) ||
+        !Number.isSafeInteger(b.amount) ||
+        Number(b.amount) < 1 ||
+        Number(b.amount) > 10000000 ||
+        (b.delayed !== undefined && typeof b.delayed !== "boolean")
+      )
+        throw new HttpError(400, "تحقق من المبلغ ومعرّف العملية.");
+      await budget(env, `payment-demo:${device.id}`, 20, 60000);
+      await env.DB.prepare(
+        "INSERT INTO demo_payments(id,device_id,request_id,amount,paid_at,notify_after) VALUES(?,?,?,?,?,?) ON CONFLICT(device_id,request_id) DO NOTHING",
+      )
+        .bind(
+          random(16),
+          device.id,
+          requestId,
+          b.amount,
+          new Date().toISOString(),
+          Date.now() + (b.delayed ? 15000 : 0),
+        )
+        .run();
+      const payment = await env.DB.prepare(
+        "SELECT id,request_id,amount,paid_at,notification_status,error FROM demo_payments WHERE device_id=? AND request_id=?",
+      )
+        .bind(device.id, requestId)
+        .first<{ id: string; amount: number }>();
+      if (!payment || payment.amount !== b.amount)
+        throw new HttpError(409, "معرّف العملية مستخدم بمبلغ مختلف.");
+      ctx.waitUntil(processPayment(env, payment.id));
+      return json(payment);
+    }
     throw new HttpError(404, "المسار غير موجود.");
   }
   // Browser mutations must come from the same origin. Mobile routes use scoped bearer credentials instead.
@@ -318,10 +388,14 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
       env.DB.prepare(
         "SELECT campaign_id,device_id,status,error,provider_id FROM deliveries ORDER BY campaign_id DESC,device_id DESC LIMIT 100",
       ),
+      env.DB.prepare(
+        "SELECT id,device_id,amount,paid_at,notification_status,error FROM demo_payments ORDER BY paid_at DESC LIMIT 100",
+      ),
     ]);
     return json({
       user,
       campaigns: result[0].results,
+      payments: result[3].results,
       devices: result[1].results,
       deliveries: result[2].results,
       firebaseConfigured: !!env.FCM_SERVICE_ACCOUNT_JSON,

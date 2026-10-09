@@ -5,6 +5,7 @@ export type Env = {
   BOOTSTRAP_TOKEN?: string;
   FCM_SERVICE_ACCOUNT_JSON?: string;
   NOTIFICATION_LOGO_URL?: string;
+  ENABLE_PAYMENT_DEMO?: string;
 };
 type Campaign = {
   id: number;
@@ -223,6 +224,22 @@ export async function tick(env: Env) {
     ),
   ]);
   if (!env.FCM_SERVICE_ACCOUNT_JSON) return;
+  if (env.ENABLE_PAYMENT_DEMO === "true") {
+    await env.DB.prepare(
+      "UPDATE demo_payments SET notification_status='unknown',error=? WHERE notification_status='sending' AND claimed_at<?",
+    )
+      .bind(
+        "انقطع العامل؛ نتيجة الإشعار غير معروفة ولن يُعاد تلقائيًا.",
+        now - 300000,
+      )
+      .run();
+    const payment = await env.DB.prepare(
+      "SELECT id FROM demo_payments WHERE notification_status='pending' AND notify_after<=? ORDER BY notify_after LIMIT 1",
+    )
+      .bind(now)
+      .first<{ id: string }>();
+    if (payment) await processPayment(env, payment.id);
+  }
   const sending = await env.DB.prepare(
     "SELECT id FROM campaigns WHERE status='sending' ORDER BY updated_at LIMIT 1",
   ).first<{ id: number }>();
@@ -237,4 +254,77 @@ export async function tick(env: Env) {
     .first<{ id: number }>();
   if (due && (await claimCampaign(env, due.id)))
     await processCampaign(env, due.id);
+}
+
+export async function processPayment(env: Env, id: string) {
+  if (env.ENABLE_PAYMENT_DEMO !== "true" || !env.FCM_SERVICE_ACCOUNT_JSON)
+    return;
+  const payment = await env.DB.prepare(
+    "UPDATE demo_payments SET notification_status='sending',claimed_at=? WHERE id=? AND notification_status='pending' AND notify_after<=? RETURNING device_id,amount",
+  )
+    .bind(Date.now(), id, Date.now())
+    .first<{ device_id: number; amount: number }>();
+  if (!payment) return;
+  let status = "failed",
+    error: string | null = null;
+  try {
+    const device = await env.DB.prepare(
+      "SELECT token FROM devices WHERE id=? AND active=1 AND segment='test'",
+    )
+      .bind(payment.device_id)
+      .first<{ token: string }>();
+    if (!device) throw new Error("الجهاز غير نشط أو خارج شريحة الاختبار.");
+    const account = await oauth(env.FCM_SERVICE_ACCOUNT_JSON);
+    // One attempt only: a timeout may occur after Firebase accepted the request.
+    status = "unknown";
+    const response = await fetch(
+      `https://fcm.googleapis.com/v1/projects/${account.project}/messages:send`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${account.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: {
+            token: device.token,
+            notification: {
+              title: "تسديد فاتورة تجريبية",
+              body: `تم تسجيل تسديد تجريبي بقيمة ${payment.amount.toLocaleString("ar")} ل.س. لم يُخصم أي مبلغ حقيقي.`,
+            },
+            data: {
+              eventType: "payment_demo",
+              paymentId: id,
+              url: `nabdh://payment/${id}`,
+            },
+            android: {
+              priority: "high",
+              notification: {
+                color: "#6b7280",
+                ...(env.NOTIFICATION_LOGO_URL
+                  ? { image: env.NOTIFICATION_LOGO_URL }
+                  : {}),
+              },
+            },
+          },
+        }),
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+    status = response.ok ? "accepted" : "failed";
+    error = response.ok ? null : `FCM HTTP ${response.status}`;
+  } catch (failure) {
+    error =
+      status === "unknown"
+        ? "تعذر تأكيد قبول الإشعار؛ لن يُعاد تلقائيًا."
+        : failure instanceof Error &&
+            failure.message === "الجهاز غير نشط أو خارج شريحة الاختبار."
+          ? failure.message
+          : "تعذرت مصادقة Firebase.";
+  }
+  await env.DB.prepare(
+    "UPDATE demo_payments SET notification_status=?,error=? WHERE id=? AND notification_status='sending'",
+  )
+    .bind(status, error, id)
+    .run();
 }

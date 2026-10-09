@@ -16,7 +16,7 @@ async function request(
         "Content-Type": "application/json",
         ...(credential ? { Authorization: `Bearer ${credential}` } : {}),
       },
-      body: JSON.stringify(body),
+      body: method === "GET" ? undefined : JSON.stringify(body),
       signal: controller.signal,
     });
     const result = await response.json();
@@ -25,6 +25,39 @@ async function request(
   } finally {
     clearTimeout(timeout);
   }
+}
+export type DemoPayment = {
+  id: string;
+  request_id: string;
+  amount: number;
+  paid_at: string;
+  notification_status: string;
+  error: string | null;
+};
+export async function listPayments(
+  connection: Connection,
+  id?: string,
+): Promise<DemoPayment[]> {
+  return request(
+    connection.url,
+    "/api/mobile/payments" + (id ? `?id=${encodeURIComponent(id)}` : ""),
+    undefined,
+    connection.credential,
+    "GET",
+  );
+}
+export async function payDemo(
+  connection: Connection,
+  requestId: string,
+  amount: number,
+  delayed = false,
+): Promise<DemoPayment> {
+  return request(
+    connection.url,
+    "/api/mobile/payments",
+    { requestId, amount, delayed },
+    connection.credential,
+  );
 }
 export async function pair(
   url: string,
