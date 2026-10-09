@@ -8,14 +8,14 @@ export default (): ExpoConfig => {
   return {
     name: "Cash Mobile",
     slug: "nabdh-test-app",
-    version: "0.1.1",
+    version: "0.1.2",
     icon: "./assets/cash-mobile.png",
     orientation: "portrait",
     userInterfaceStyle: "light",
     scheme: "nabdh",
     android: {
       package: packageName,
-      versionCode: 2,
+      versionCode: 3,
       adaptiveIcon: {
         foregroundImage: "./assets/cash-mobile.png",
         backgroundColor: "#000000",
@@ -29,7 +29,14 @@ export default (): ExpoConfig => {
       "./plugins/with-notification-color.cjs",
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
-      ["expo-notifications", { defaultChannel: "nabdh", color: "#365e42" }],
+      [
+        "expo-notifications",
+        {
+          defaultChannel: "nabdh",
+          color: "#d7ae25",
+          icon: "./assets/notification-icon.png",
+        },
+      ],
       "expo-secure-store",
       [
         "expo-build-properties",
