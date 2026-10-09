@@ -1,13 +1,15 @@
-# Cash Mobile 0.1.7 — Payment notification test APK
+# Cash Mobile Android test app — 0.1.8
 
-`cash-mobile-arm64.apk`: standalone Android 7+ ARM64 app; Google Play services required for Firebase push. Package `com.nabdh.testapp`, version code 8. Same development signing certificate as 0.1.6; install as an update. No Metro needed.
+Download `cash-mobile-arm64.apk` for Android 7.0+ ARM64 devices with Google Play Services. Package `com.nabdh.testapp`, versionCode 9, same development signing certificate as 0.1.7; install as an update. No Metro or paid build service required.
 
-New Bills tab tests a simulated payment and a private notification to the initiating device. Choose immediate notification, or delayed notification to allow moving the app to the background. Delayed notifications become due after 15 seconds and are picked up on the next minute cron tick; timing is not guaranteed. Tapping the notification loads the payment from the authenticated server and opens its details. No real money is charged.
+This version adds an automatic notification test catalog to the Arabic “التجارب” tab. Configure enabled types and title/body templates from the Cloudflare admin dashboard. The app tests immediate or delayed events for its own paired device only; it does not process real payments or balance changes. Existing uncertain requests retain their ID to prevent duplicates.
 
-The repeat-same-operation button tests idempotency. Interrupted submission attempts retain their request ID locally. The backend isolates payment records by device, validates amounts, rate limits submissions, and atomically claims the notification once. Unknown outcomes are not automatically resent.
+Deploy main commit db5bdd4 or newer with `npm run db:remote && npm run deploy` from `cloudflare` before using the new features. This applies migration 0003. Dashboard: https://testcodex.eng-ali-m-ibrahim.workers.dev
 
-Backend deployment prerequisite: main branch, cloudflare root, deploy command `npm run db:remote && npm run deploy`; applies migration `0002_payment_demo.sql`. Demo requires `ENABLE_PAYMENT_DEMO=true` (included in configuration) and existing Firebase service-account secret. Pairing is limited to the test segment. Production invoice integration and subscriber identity are not implemented by this demo.
+The dashboard now provides a navy/gold Arabic layout, campaign table, charts from real records, subscriber number/name management, admin device-to-subscriber assignment, and campaigns for selected subscribers. Platform and segment remain additional audience filters. Resending preserves the selected subscribers. This test flow does not integrate the production subscriber identity system.
 
-Backend: https://testcodex.eng-ali-m-ibrahim.workers.dev
+The original transparent user-supplied logo is preserved. Adaptive icon background is Android transparent; notification small icons remain monochrome as required by Android. The Firebase service-account private key is not included in this app.
 
-Original transparent logo, adaptive transparent background and notification settings retained. No physical-device push delivery or live Cloudflare deployment was verified in the build environment. Firebase sends were mocked in integration tests. No service-account private key is bundled. See companion SHA256 checksum. Binary-only branch, do not merge into main.
+Verified: worker/D1/FCM mock and browser tests, mobile unit tests and type checks, native release build, matching signature, original logo pixels and transparent icon resources. Physical Android reception needs device testing; no emulator or physical device was connected for this build.
+
+This branch contains binaries only; do not merge it into main. Check `cash-mobile-arm64.apk.sha256` for the artifact checksum.
