@@ -326,6 +326,67 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
         409,
       );
       assert.equal((await call(`/campaigns/${id}`, "DELETE")).status, 409);
+      const originalDeliveries = (
+        await db
+          .prepare("SELECT * FROM deliveries WHERE campaign_id=?")
+          .bind(id)
+          .all()
+      ).results;
+      const copy = await call(`/campaigns/${id}/duplicate`, "POST", {});
+      assert.equal(copy.status, 201);
+      assert.notEqual(copy.body.id, id);
+      for (const key of ["title", "body", "platform", "segment", "link"])
+        assert.equal(copy.body[key], campaign[key]);
+      assert.equal(copy.body.status, "draft");
+      assert.equal(copy.body.scheduled_at, null);
+      assert.equal(copy.body.accepted, 0);
+      assert.equal(copy.body.failed, 0);
+      assert.equal(sends, 1, "creating a resend draft must not send messages");
+      assert.equal(
+        (await call(`/campaigns/${copy.body.id}/duplicate`, "POST", {})).status,
+        409,
+      );
+      assert.equal(
+        (await call("/campaigns/999999/duplicate", "POST", {})).status,
+        409,
+      );
+      const resend = await Promise.all([
+        call(`/campaigns/${copy.body.id}/send`, "POST", {}),
+        call(`/campaigns/${copy.body.id}/send`, "POST", {}),
+      ]);
+      assert.deepEqual(resend.map((x) => x.status).sort(), [202, 409]);
+      for (let i = 0; i < 100; i++) {
+        if (
+          (
+            await db
+              .prepare("SELECT status FROM campaigns WHERE id=?")
+              .bind(copy.body.id)
+              .first()
+          ).status === "sent"
+        )
+          break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal(sends, 2);
+      const retried = await db
+        .prepare("SELECT * FROM campaigns WHERE id=?")
+        .bind(copy.body.id)
+        .first();
+      assert.equal(retried.status, "sent");
+      assert.equal(retried.accepted, 1);
+      assert.deepEqual(
+        await db.prepare("SELECT * FROM campaigns WHERE id=?").bind(id).first(),
+        campaign,
+      );
+      assert.deepEqual(
+        (
+          await db
+            .prepare("SELECT * FROM deliveries WHERE campaign_id=?")
+            .bind(id)
+            .all()
+        ).results,
+        originalDeliveries,
+      );
     },
   );
   await t.test(
@@ -462,7 +523,9 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
         await page.goto((await mf.ready).toString());
         await expect(page.locator(".brand img")).toBeVisible();
         await expect
-          .poll(() => page.locator(".brand img").evaluate((image) => image.naturalWidth))
+          .poll(() =>
+            page.locator(".brand img").evaluate((image) => image.naturalWidth),
+          )
           .toBeGreaterThan(0);
         await page.getByLabel("البريد الإلكتروني").fill("admin@example.test");
         await page
@@ -474,6 +537,22 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
         await expect(
           page.getByRole("heading", { name: "كل رسالة، فرصة جديدة." }),
         ).toBeVisible();
+        const beforeResendDraft = sends;
+        await page
+          .locator("#campaign-list .list-row")
+          .filter({
+            has: page.getByRole("button", { name: "إعادة إرسال", exact: true }),
+          })
+          .first()
+          .getByRole("button", { name: "إعادة إرسال", exact: true })
+          .click();
+        await expect(page.locator("#notice")).toContainText(
+          "جُهّزت نسخة جديدة",
+        );
+        await expect(
+          page.locator('#campaign-form input[name="id"]'),
+        ).toHaveValue(/^[1-9][0-9]*$/);
+        assert.equal(sends, beforeResendDraft);
         await page.getByLabel("اسم الحملة").fill("حملة من المتصفح");
         await page.getByLabel("عنوان الإشعار").fill("اختبار الواجهة");
         await page.getByLabel("نص الإشعار").fill("رسالة آمنة من الاختبار");

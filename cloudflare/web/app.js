@@ -124,6 +124,18 @@ function render() {
       c.status,
     );
     if (c.error) buttons.parentElement.append(element("small", c.error));
+    if (c.status === "sent") {
+      buttons.append(
+        action("إعادة إرسال", async () => {
+          const copy = await api(`/campaigns/${c.id}/duplicate`, "POST", {});
+          await refresh();
+          edit(copy);
+          notice(
+            "جُهّزت نسخة جديدة بنفس المحتوى والجمهور. راجعها ثم اضغط إرسال الآن؛ سجل الحملة السابقة محفوظ.",
+          );
+        }),
+      );
+    }
     if (["draft", "scheduled"].includes(c.status)) {
       buttons.append(action("تعديل", () => edit(c)));
       buttons.append(

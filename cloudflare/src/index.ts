@@ -415,10 +415,22 @@ async function api(request: Request, env: Env, ctx: ExecutionContext) {
     if (!row) throw new HttpError(409, "الحملة غير موجودة أو بدأ إرسالها.");
     return json(row);
   }
-  const match = path.match(/^\/api\/campaigns\/([1-9][0-9]*)(\/send)?$/);
+  const match = path.match(
+    /^\/api\/campaigns\/([1-9][0-9]*)(\/(?:send|duplicate))?$/,
+  );
   if (match) {
     const id = Number(match[1]);
-    if (match[2] && method === "POST") {
+    if (match[2] === "/duplicate" && method === "POST") {
+      const now = new Date().toISOString();
+      const copy = await env.DB.prepare(
+        "INSERT INTO campaigns(name,title,body,platform,segment,link,status,created_at,updated_at) SELECT substr(name,1,60)||' · إعادة إرسال #'||id,title,body,platform,segment,link,'draft',?,? FROM campaigns WHERE id=? AND status='sent' RETURNING id,name,title,body,platform,segment,link,status,scheduled_at,accepted,failed",
+      )
+        .bind(now, now, id)
+        .first();
+      if (!copy) throw new HttpError(409, "يمكن إعادة إرسال حملة مكتملة فقط.");
+      return json(copy, 201);
+    }
+    if (match[2] === "/send" && method === "POST") {
       if (!env.FCM_SERVICE_ACCOUNT_JSON)
         throw new HttpError(503, "أضف سر Firebase قبل الإرسال.");
       if (!(await claimCampaign(env, id)))
