@@ -1,13 +1,13 @@
-# Cash Mobile 0.1.6 — Android test APK
+# Cash Mobile 0.1.7 — Payment notification test APK
 
-Download `cash-mobile-arm64.apk`. Requires Android 7+ (API 24), ARM64 and Google Play services for Firebase notifications. Package: `com.nabdh.testapp`; version code: 7.
+`cash-mobile-arm64.apk`: standalone Android 7+ ARM64 app; Google Play services required for Firebase push. Package `com.nabdh.testapp`, version code 8. Same development signing certificate as 0.1.6; install as an update. No Metro needed.
 
-This version provides a native adaptive launcher icon with an explicit transparent background on Android 8+, instead of the legacy bitmap icon used by 0.1.5. The original transparent logo is retained unchanged; foreground padding protects it from clipping. Android 7 uses the original transparent PNG fallback. Both the regular and round launcher icon point at these resources.
+New Bills tab tests a simulated payment and a private notification to the initiating device. Choose immediate notification, or delayed notification to allow moving the app to the background. Delayed notifications become due after 15 seconds and are picked up on the next minute cron tick; timing is not guaranteed. Tapping the notification loads the payment from the authenticated server and opens its details. No real money is charged.
 
-Notification behavior is unchanged from 0.1.5: original logo, monochrome small icon and gray accent. Android and device launchers may still apply their own visual styling. The final appearance has not been verified on a physical phone.
+The repeat-same-operation button tests idempotency. Interrupted submission attempts retain their request ID locally. The backend isolates payment records by device, validates amounts, rate limits submissions, and atomically claims the notification once. Unknown outcomes are not automatically resent.
 
-This standalone release uses the same development signing certificate as the previous test APK. Install it as an update, then remove and add the home-screen shortcut if the launcher caches the previous icon. No Metro server is required.
+Backend deployment prerequisite: main branch, cloudflare root, deploy command `npm run db:remote && npm run deploy`; applies migration `0002_payment_demo.sql`. Demo requires `ENABLE_PAYMENT_DEMO=true` (included in configuration) and existing Firebase service-account secret. Pairing is limited to the test segment. Production invoice integration and subscriber identity are not implemented by this demo.
 
 Backend: https://testcodex.eng-ali-m-ibrahim.workers.dev
 
-The companion `.sha256` file provides the checksum. No Firebase service-account private key is included. This binary-only branch is not intended to be merged into main.
+Original transparent logo, adaptive transparent background and notification settings retained. No physical-device push delivery or live Cloudflare deployment was verified in the build environment. Firebase sends were mocked in integration tests. No service-account private key is bundled. See companion SHA256 checksum. Binary-only branch, do not merge into main.
