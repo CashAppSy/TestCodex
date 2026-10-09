@@ -26,6 +26,7 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
           compatibilityDate: "2026-10-08",
           bindings: {
             BOOTSTRAP_TOKEN: bootstrap,
+            NOTIFICATION_LOGO_URL: "https://logo.example.test/cash-mobile.png",
             FCM_SERVICE_ACCOUNT_JSON: JSON.stringify(account),
           },
           d1Databases: { DB: "nabdh-test" },
@@ -93,6 +94,10 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
                 return Response.json({ name: "dry-run" });
               }
               sends++;
+              assert.equal(
+                body.message.android.notification.image,
+                "https://logo.example.test/cash-mobile.png",
+              );
               if (body.message.token.includes("invalid"))
                 return Response.json(
                   { error: { details: [{ errorCode: "UNREGISTERED" }] } },

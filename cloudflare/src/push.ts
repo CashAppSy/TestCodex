@@ -4,6 +4,7 @@ export type Env = {
   ASSETS: Fetcher;
   BOOTSTRAP_TOKEN?: string;
   FCM_SERVICE_ACCOUNT_JSON?: string;
+  NOTIFICATION_LOGO_URL?: string;
 };
 type Campaign = {
   id: number;
@@ -140,7 +141,14 @@ export async function processCampaign(env: Env, id: number) {
                   token: device.token,
                   notification: { title: campaign.title, body: campaign.body },
                   data: { campaignId: String(campaign.id), url: campaign.link },
-                  android: { priority: "high" },
+                  android: {
+                    priority: "high",
+                    ...(env.NOTIFICATION_LOGO_URL
+                      ? {
+                          notification: { image: env.NOTIFICATION_LOGO_URL },
+                        }
+                      : {}),
+                  },
                 },
               }),
               signal: AbortSignal.timeout(10000),

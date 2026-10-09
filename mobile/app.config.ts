@@ -8,14 +8,14 @@ export default (): ExpoConfig => {
   return {
     name: "Cash Mobile",
     slug: "nabdh-test-app",
-    version: "0.1.3",
+    version: "0.1.4",
     icon: "./assets/cash-mobile.png",
     orientation: "portrait",
     userInterfaceStyle: "light",
     scheme: "nabdh",
     android: {
       package: packageName,
-      versionCode: 4,
+      versionCode: 5,
       adaptiveIcon: {
         foregroundImage: "./assets/cash-mobile.png",
         backgroundColor: "#ffffff",
@@ -26,6 +26,7 @@ export default (): ExpoConfig => {
         : {}),
     },
     plugins: [
+      "./plugins/with-notification-logo.cjs",
       "./plugins/with-notification-color.cjs",
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
@@ -48,7 +49,11 @@ export default (): ExpoConfig => {
         },
       ],
     ],
-    web: { bundler: "metro", output: "single", favicon: "./assets/cash-mobile.png" },
+    web: {
+      bundler: "metro",
+      output: "single",
+      favicon: "./assets/cash-mobile.png",
+    },
     experiments: { baseUrl: process.env.WEB_BASE_PATH || "" },
     extra: { androidPackage: packageName, notificationProvider: "fcm" },
   };

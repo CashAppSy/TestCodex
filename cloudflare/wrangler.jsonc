@@ -4,6 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-08",
   "workers_dev": true,
+  "vars": {
+    "NOTIFICATION_LOGO_URL": "https://testcodex.eng-ali-m-ibrahim.workers.dev/cash-mobile.png?v=0.1.4",
+  },
   "assets": {
     "directory": "./web",
     "binding": "ASSETS",
