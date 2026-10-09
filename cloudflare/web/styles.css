@@ -30,7 +30,7 @@ header {
 .brand img {
   object-fit: contain;
   border-radius: 12px;
-  background: #000;
+  background: transparent;
   flex-shrink: 0;
 }
 .brand small {
