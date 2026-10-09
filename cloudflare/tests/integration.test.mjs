@@ -98,6 +98,7 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
                 body.message.android.notification.image,
                 "https://logo.example.test/cash-mobile.png",
               );
+              assert.equal(body.message.android.notification.color, "#6b7280");
               if (body.message.token.includes("invalid"))
                 return Response.json(
                   { error: { details: [{ errorCode: "UNREGISTERED" }] } },

@@ -8,18 +8,14 @@ export default (): ExpoConfig => {
   return {
     name: "Cash Mobile",
     slug: "nabdh-test-app",
-    version: "0.1.4",
+    version: "0.1.5",
     icon: "./assets/cash-mobile.png",
     orientation: "portrait",
     userInterfaceStyle: "light",
     scheme: "nabdh",
     android: {
       package: packageName,
-      versionCode: 5,
-      adaptiveIcon: {
-        foregroundImage: "./assets/cash-mobile.png",
-        backgroundColor: "#ffffff",
-      },
+      versionCode: 6,
       permissions: ["POST_NOTIFICATIONS"],
       ...(fs.existsSync(path.resolve(process.cwd(), googleServices))
         ? { googleServicesFile: googleServices }
@@ -34,8 +30,8 @@ export default (): ExpoConfig => {
         "expo-notifications",
         {
           defaultChannel: "nabdh",
-          color: "#d7ae25",
-          icon: "./assets/notification-icon.png",
+          color: "#6b7280",
+          icon: "./assets/cash-mobile.png",
         },
       ],
       "expo-secure-store",

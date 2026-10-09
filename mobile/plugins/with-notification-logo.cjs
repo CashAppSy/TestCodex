@@ -29,18 +29,22 @@ module.exports = function withNotificationLogo(config) {
         path.join(config.modRequest.projectRoot, "assets/cash-mobile.png"),
         path.join(drawable, "cash_mobile_logo.png"),
       );
-      // Add layout padding without changing any pixels in the original logo.
-      await fs.mkdir(path.join(res, "drawable"), { recursive: true });
-      await fs.writeFile(
-        path.join(res, "drawable/cash_mobile_launcher.xml"),
-        '<inset xmlns:android="http://schemas.android.com/apk/res/android" android:drawable="@drawable/cash_mobile_logo" android:inset="18%" />',
+      // Use the original transparent bitmap directly, without an adaptive
+      // background layer supplied by the app. Launchers may still apply a mask.
+      const manifestPath = path.join(
+        config.modRequest.platformProjectRoot,
+        "app/src/main/AndroidManifest.xml",
       );
-      const adaptive = path.join(res, "mipmap-anydpi-v26");
-      await fs.mkdir(adaptive, { recursive: true });
-      const xml =
-        '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"><background android:drawable="@color/iconBackground"/><foreground android:drawable="@drawable/cash_mobile_launcher"/></adaptive-icon>';
-      for (const name of ["ic_launcher.xml", "ic_launcher_round.xml"])
-        await fs.writeFile(path.join(adaptive, name), xml);
+      const manifest =
+        await AndroidConfig.Manifest.readAndroidManifestAsync(manifestPath);
+      const application =
+        AndroidConfig.Manifest.getMainApplicationOrThrow(manifest);
+      application.$["android:icon"] = "@drawable/cash_mobile_logo";
+      application.$["android:roundIcon"] = "@drawable/cash_mobile_logo";
+      await AndroidConfig.Manifest.writeAndroidManifestAsync(
+        manifestPath,
+        manifest,
+      );
       return config;
     },
   ]);

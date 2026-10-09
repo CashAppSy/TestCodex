@@ -145,7 +145,10 @@ export async function processCampaign(env: Env, id: number) {
                     priority: "high",
                     ...(env.NOTIFICATION_LOGO_URL
                       ? {
-                          notification: { image: env.NOTIFICATION_LOGO_URL },
+                          notification: {
+                            image: env.NOTIFICATION_LOGO_URL,
+                            color: "#6b7280",
+                          },
                         }
                       : {}),
                   },
