@@ -126,7 +126,36 @@ function render() {
     if (c.error) buttons.parentElement.append(element("small", c.error));
     if (c.status === "sent") {
       buttons.append(
-        action("إعادة إرسال", async () => {
+        action(
+          "إعادة إرسال",
+          async () => {
+            if (
+              !confirm(
+                `إعادة إرسال «${c.name}» إلى ${c.platform} وشريحة ${c.segment} الآن؟ ستُنشأ نسخة جديدة للإرسال إلى الأجهزة النشطة، مع حفظ سجل الحملة السابقة.`,
+              )
+            )
+              return;
+            const copy = await api(`/campaigns/${c.id}/duplicate`, "POST", {});
+            try {
+              await api(`/campaigns/${copy.id}/send`, "POST", {});
+            } catch (error) {
+              await refresh();
+              const current = state.campaigns.find(
+                (campaign) => campaign.id === copy.id,
+              );
+              if (current?.status === "draft") edit(current);
+              throw new Error(
+                `تعذر تأكيد بدء إعادة الإرسال: ${error.message} النسخة محفوظة في قائمة الحملات؛ راجع حالتها قبل المحاولة مجددًا.`,
+              );
+            }
+            await refresh();
+            notice(
+              "بدأت إعادة إرسال الحملة في طلب جديد؛ سجل الحملة السابقة محفوظ.",
+            );
+          },
+          "primary",
+        ),
+        action("نسخ للتعديل", async () => {
           const copy = await api(`/campaigns/${c.id}/duplicate`, "POST", {});
           await refresh();
           edit(copy);
@@ -136,6 +165,13 @@ function render() {
         }),
       );
     }
+    if (c.status === "sending")
+      buttons.parentElement.append(
+        element(
+          "small",
+          "تتحدث النتائج تلقائيًا أثناء الإرسال. سيظهر زر إعادة الإرسال بعد اكتمال الطلب.",
+        ),
+      );
     if (["draft", "scheduled"].includes(c.status)) {
       buttons.append(action("تعديل", () => edit(c)));
       buttons.append(
@@ -199,6 +235,24 @@ async function refresh() {
   state = await api("/admin");
   render();
 }
+let autoRefreshing = false;
+setInterval(async () => {
+  if (
+    document.hidden ||
+    $("dashboard").hidden ||
+    autoRefreshing ||
+    !state.campaigns.some((campaign) => campaign.status === "sending")
+  )
+    return;
+  autoRefreshing = true;
+  try {
+    await refresh();
+  } catch {
+    // Leave the current view available; manual refresh reports any error.
+  } finally {
+    autoRefreshing = false;
+  }
+}, 5000);
 async function boot() {
   const status = await api("/status");
   setup = !status.hasAdmin;

@@ -7,11 +7,15 @@
     <title>Cash Mobile · إدارة حملات الإشعارات</title>
     <link rel="icon" type="image/png" href="/cash-mobile.png" />
     <link rel="stylesheet" href="/styles.css" />
-    <script src="/app.js" defer></script>
+    <script src="/app.js?v=resend-2" defer></script>
   </head>
   <body>
     <header>
-      <a class="brand" href="/"><img src="/cash-mobile.png" alt="" width="64" height="64" /><span>Cash Mobile <small>إدارة حملات الإشعارات</small></span></a>
+      <a class="brand" href="/"
+        ><img src="/cash-mobile.png" alt="" width="64" height="64" /><span
+          >Cash Mobile <small>إدارة حملات الإشعارات</small></span
+        ></a
+      >
       <div id="account" hidden>
         <span id="user-name"></span
         ><button id="logout" class="quiet">تسجيل الخروج</button>
@@ -175,6 +179,8 @@
             <h2>حملاتك</h2>
             <p>
               أحدث 100 حملة. القبول لدى Firebase لا يثبت الوصول أو فتح الإشعار.
+              بعد اكتمال الحملة استخدم «إعادة إرسال» لإرسالها مجددًا بعد
+              التأكيد، أو «نسخ للتعديل» لتغيير محتواها أولًا.
             </p>
             <div id="campaign-list"></div>
           </div>

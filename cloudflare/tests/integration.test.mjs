@@ -543,14 +543,61 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
         await expect(
           page.getByRole("heading", { name: "كل رسالة، فرصة جديدة." }),
         ).toBeVisible();
+        const resendRow = page
+          .locator("#campaign-list .list-row")
+          .filter({ hasText: "batch-test" })
+          .filter({
+            has: page.getByRole("button", { name: "إعادة إرسال", exact: true }),
+          })
+          .first();
+        const beforeDirectResend = sends;
+        const countBefore = (
+          await db.prepare("SELECT COUNT(*) AS count FROM campaigns").first()
+        ).count;
+        page.once("dialog", (dialog) => dialog.dismiss());
+        await resendRow
+          .getByRole("button", { name: "إعادة إرسال", exact: true })
+          .click();
+        assert.equal(
+          (await db.prepare("SELECT COUNT(*) AS count FROM campaigns").first())
+            .count,
+          countBefore,
+        );
+        assert.equal(sends, beforeDirectResend);
+        page.once("dialog", (dialog) => dialog.accept());
+        await resendRow
+          .getByRole("button", { name: "إعادة إرسال", exact: true })
+          .click();
+        await expect(page.locator("#notice")).toContainText(
+          "بدأت إعادة إرسال الحملة",
+        );
+        await expect.poll(() => sends).toBe(beforeDirectResend + 5);
+        const directCopy = await db
+          .prepare(
+            "SELECT * FROM campaigns WHERE segment='batch-test' ORDER BY id DESC LIMIT 1",
+          )
+          .first();
+        assert.equal(directCopy.status, "sending");
+        await (
+          await mf.getWorker("cms")
+        ).scheduled({ cron: "* * * * *", scheduledTime: Date.now() });
+        // The UI must discover completion without pressing manual refresh.
+        await expect(
+          page
+            .locator("#campaign-list .list-row")
+            .filter({
+              has: page.getByText(directCopy.name, { exact: true }),
+            })
+            .getByRole("button", { name: "إعادة إرسال", exact: true }),
+        ).toBeVisible({ timeout: 15000 });
         const beforeResendDraft = sends;
         await page
           .locator("#campaign-list .list-row")
           .filter({
-            has: page.getByRole("button", { name: "إعادة إرسال", exact: true }),
+            has: page.getByRole("button", { name: "نسخ للتعديل", exact: true }),
           })
           .first()
-          .getByRole("button", { name: "إعادة إرسال", exact: true })
+          .getByRole("button", { name: "نسخ للتعديل", exact: true })
           .click();
         await expect(page.locator("#notice")).toContainText(
           "جُهّزت نسخة جديدة",
