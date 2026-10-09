@@ -1,9 +1,13 @@
-# Cash Mobile · Android 0.1.5
+# Cash Mobile 0.1.6 — Android test APK
 
-نسخة اختبار ARM64 لأجهزة Android 7+ مع Google Play Services لاستقبال FCM، تعمل دون Metro أو Expo Go.
+Download `cash-mobile-arm64.apk`. Requires Android 7+ (API 24), ARM64 and Google Play services for Firebase notifications. Package: `com.nabdh.testapp`; version code: 7.
 
-أيقونة التطبيق تشير مباشرةً إلى PNG الأصلي الشفاف دون طبقة خلفية بيضاء يضيفها التطبيق. قد يضيف مشغل الهاتف قناعًا أو إطارًا من عنده. أيقونة الإشعار الصغيرة مشتقة من اللوغو الأصلي نفسه بدل الرسم البديل؛ Android يعرضها بلون واحد. لون التمييز رمادي بدل الأصفر، وقد تضيف واجهة الهاتف شارة حسب تصميمها. الصورة الملونة الكبيرة للإشعار تبقى اللوغو الأصلي.
+This version provides a native adaptive launcher icon with an explicit transparent background on Android 8+, instead of the legacy bitmap icon used by 0.1.5. The original transparent logo is retained unchanged; foreground padding protects it from clipping. Android 7 uses the original transparent PNG fallback. Both the regular and round launcher icon point at these resources.
 
-الحزمة com.nabdh.testapp، مشروع Firebase nabed-549b0، versionCode 6. توقيع تطوير مطابق للنسخة السابقة؛ ثبت كتحديث، ثم امسح الإشعارات القديمة واختبر إشعارًا جديدًا بعد نشر Worker المحدث. لم يُختبر هذا الإصدار على هاتف فعلي داخل بيئة البناء.
+Notification behavior is unchanged from 0.1.5: original logo, monochrome small icon and gray accent. Android and device launchers may still apply their own visual styling. The final appearance has not been verified on a physical phone.
 
-اللوحة: https://testcodex.eng-ali-m-ibrahim.workers.dev . ملف SHA256 مرفق للتحقق من التنزيل. لا يحتوي مفتاح حساب خدمة Firebase.
+This standalone release uses the same development signing certificate as the previous test APK. Install it as an update, then remove and add the home-screen shortcut if the launcher caches the previous icon. No Metro server is required.
+
+Backend: https://testcodex.eng-ali-m-ibrahim.workers.dev
+
+The companion `.sha256` file provides the checksum. No Firebase service-account private key is included. This binary-only branch is not intended to be merged into main.
