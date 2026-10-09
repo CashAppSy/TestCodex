@@ -44,7 +44,7 @@ export async function startNotifications(
   onError: (error: string) => void,
 ) {
   await Notifications.setNotificationChannelAsync("nabdh", {
-    name: "إشعارات نبض",
+    name: "إشعارات Cash Mobile",
     importance: Notifications.AndroidImportance.HIGH,
     sound: "default",
   });

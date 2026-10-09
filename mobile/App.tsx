@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  Image,
   Linking,
   Platform,
   Pressable,
@@ -276,11 +277,14 @@ export default function App() {
       <View style={styles.shell}>
         <View style={styles.header}>
           <View style={styles.brand}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>ن</Text>
-            </View>
+            <Image
+              source={require("./assets/cash-mobile.png")}
+              accessibilityLabel="شعار Cash Mobile"
+              style={styles.logo}
+              resizeMode="contain"
+            />
             <View>
-              <Text style={styles.brandName}>نبض</Text>
+              <Text style={styles.brandName}>Cash Mobile</Text>
               <Text style={styles.brandCaption}>تطبيق الاختبار</Text>
             </View>
           </View>
@@ -397,7 +401,7 @@ export default function App() {
             <>
               <Text style={styles.eyebrow}>رسائلك، من الطرف الآخر</Text>
               <Text accessibilityRole="header" style={styles.title}>
-                أهلًا بك في نبض.
+                أهلًا بك في Cash Mobile.
               </Text>
               <Text style={styles.subtitle}>
                 جرّب كيف تصل رسالتك، وكيف يراها مستخدم تطبيقك.
@@ -650,7 +654,7 @@ export default function App() {
                 <Text style={styles.sectionTitle}>نسخة الاختبار · 0.1</Text>
                 <Text style={styles.paragraph}>
                   هذه واجهة اختبار Android لاستقبال رسائل Firebase Cloud
-                  Messaging المرسلة من لوحة نبض.
+                  Messaging المرسلة من لوحة Cash Mobile.
                 </Text>
                 <Text style={styles.paragraph}>
                   عندما يكون التطبيق مفتوحًا: يُحفظ الإشعار في الصندوق ويظهر
@@ -748,17 +752,16 @@ const styles = StyleSheet.create({
   },
   brand: { flexDirection: "row-reverse", alignItems: "center", gap: 10 },
   logo: {
-    width: 42,
-    height: 42,
+    width: 64,
+    height: 64,
     borderRadius: 12,
-    backgroundColor: "#365e42",
+    backgroundColor: "#000000",
     alignItems: "center",
     justifyContent: "center",
   },
-  logoText: { fontSize: 28, color: "#fff", fontWeight: "700" },
   brandName: {
     textAlign: "right",
-    fontSize: 25,
+    fontSize: 20,
     fontWeight: "700",
     color: "#29352c",
   },

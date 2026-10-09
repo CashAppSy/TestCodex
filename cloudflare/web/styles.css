@@ -19,10 +19,19 @@ header {
   border-bottom: 1px solid #dfe4d7;
 }
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   color: #365e42;
-  font-size: 28px;
+  font-size: 24px;
   text-decoration: none;
   font-weight: 800;
+}
+.brand img {
+  object-fit: contain;
+  border-radius: 12px;
+  background: #000;
+  flex-shrink: 0;
 }
 .brand small {
   font-size: 12px;

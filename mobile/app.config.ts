@@ -6,14 +6,20 @@ export default (): ExpoConfig => {
   const googleServices =
     process.env.GOOGLE_SERVICES_FILE || "./google-services.json";
   return {
-    name: "نبض · تطبيق الاختبار",
+    name: "Cash Mobile",
     slug: "nabdh-test-app",
-    version: "0.1.0",
+    version: "0.1.1",
+    icon: "./assets/cash-mobile.png",
     orientation: "portrait",
     userInterfaceStyle: "light",
     scheme: "nabdh",
     android: {
       package: packageName,
+      versionCode: 2,
+      adaptiveIcon: {
+        foregroundImage: "./assets/cash-mobile.png",
+        backgroundColor: "#000000",
+      },
       permissions: ["POST_NOTIFICATIONS"],
       ...(fs.existsSync(path.resolve(process.cwd(), googleServices))
         ? { googleServicesFile: googleServices }
@@ -35,7 +41,7 @@ export default (): ExpoConfig => {
         },
       ],
     ],
-    web: { bundler: "metro", output: "single" },
+    web: { bundler: "metro", output: "single", favicon: "./assets/cash-mobile.png" },
     experiments: { baseUrl: process.env.WEB_BASE_PATH || "" },
     extra: { androidPackage: packageName, notificationProvider: "fcm" },
   };

@@ -37,6 +37,7 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
                 "/index.html",
                 "/app.js",
                 "/styles.css",
+                "/cash-mobile.png",
               ].includes(name)
                 ? name === "/"
                   ? "index.html"
@@ -48,7 +49,9 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
                     ? "text/javascript"
                     : file.endsWith(".css")
                       ? "text/css"
-                      : "text/html",
+                      : file.endsWith(".png")
+                        ? "image/png"
+                        : "text/html",
                 },
               });
             },
@@ -457,6 +460,10 @@ test("Cloudflare worker uses real D1 transactions and mocked FCM", async (t) => 
         const errors = [];
         page.on("pageerror", (error) => errors.push(error.message));
         await page.goto((await mf.ready).toString());
+        await expect(page.locator(".brand img")).toBeVisible();
+        await expect
+          .poll(() => page.locator(".brand img").evaluate((image) => image.naturalWidth))
+          .toBeGreaterThan(0);
         await page.getByLabel("البريد الإلكتروني").fill("admin@example.test");
         await page
           .getByLabel("كلمة المرور")
